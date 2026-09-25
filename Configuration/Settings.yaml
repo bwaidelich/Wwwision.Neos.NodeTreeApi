@@ -1,0 +1,59 @@
+Wwwision:
+  Neos:
+    NodeTreeApi:
+      # Derive one tree from every "Neos.Neos.userInterface.navigateComponent.nodeTree.presets" entry, named like the
+      # preset. Its "baseNodeType" filters every level of the tree
+      derivedFromPresets: true
+
+      # Additional trees – or adjustments of the ones derived from presets, by preset name. "~" removes a tree
+      #
+      # <treeId>:
+      #   label: 'Some.Package:Main:tree.label' # a translation shorthand or a plain label
+      #   icon: 'sitemap'
+      #   baseNodeType: 'Neos.Neos:Document,!Some.Package:Folder'
+      #   # which resolver lists the children of which node type, the first (by position) matching entry wins.
+      #   # Children of all other nodes are listed by the "default" resolver
+      #   childrenResolvers:
+      #     'blog':
+      #       nodeType: 'Some.Package:Blog'
+      #       resolver: 'blogPostingsByDate'
+      #       position: 'start'
+      trees: []
+
+      # The resolvers the trees can refer to, by key. "options" are passed to the constructor as named arguments
+      resolvers:
+        'default':
+          className: 'Wwwision\Neos\NodeTreeApi\Resolver\DefaultNodeResolver'
+
+      # The Flow authentication providers whose tokens count – usually just the one of the Neos backend session
+      authenticationProviders:
+        'Neos.Neos:Backend': true
+
+Neos:
+  OpenApi:
+    FlowAdapter:
+      apis:
+        'nodeTree':
+          uriPrefix: 'neos/node-tree-api'
+          info:
+            title: 'Neos Node Tree API'
+            version: '0.1.0'
+          classes:
+            'Wwwision\Neos\NodeTreeApi\Api\NodeTreeApi': true
+          specPath: 'openapi.json'
+          docsPath: 'docs'
+          authContextProvider: 'Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider'
+
+  Flow:
+    security:
+      authentication:
+        providers:
+          'Neos.Neos:Backend':
+            requestPatterns:
+              # Makes the backend session count for requests to the API. The patterns of a provider are OR-combined
+              # only if they are of the same type – so this has to be a "ControllerObjectName" pattern, like the ones
+              # of Neos. As a consequence, the backend session is available to all APIs served by the adapter
+              'Wwwision.Neos.NodeTreeApi:Api':
+                pattern: 'ControllerObjectName'
+                patternOptions:
+                  controllerObjectNamePattern: 'Neos\OpenApi\FlowAdapter\Controller\OpenApiController'

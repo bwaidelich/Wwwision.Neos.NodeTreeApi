@@ -1,0 +1,29 @@
+{
+    "name": "wwwision/neos-nodetreeapi",
+    "description": "OpenAPI compliant HTTP API exposing (virtual) node trees for the Neos navigate component",
+    "type": "neos-package",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4",
+        "neos/neos": "^9.2",
+        "neos/openapi-flowadapter": "@dev",
+        "neos/openapi": "@dev",
+        "neos/jsonschema": "@dev",
+        "neos/schematic": "@dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "Wwwision\\Neos\\NodeTreeApi\\": "Classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Wwwision\\Neos\\NodeTreeApi\\Tests\\": "Tests/"
+        }
+    },
+    "extra": {
+        "neos": {
+            "package-key": "Wwwision.Neos.NodeTreeApi"
+        }
+    }
+}

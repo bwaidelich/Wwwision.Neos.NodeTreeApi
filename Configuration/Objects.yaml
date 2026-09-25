@@ -1,0 +1,18 @@
+Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions:
+  scope: singleton
+  factoryObjectName: 'Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitionsFactory'
+  factoryMethodName: 'create'
+
+Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitionsFactory:
+  arguments:
+    1:
+      setting: 'Wwwision.Neos.NodeTreeApi'
+    2:
+      setting: 'Neos.Neos.userInterface.navigateComponent.nodeTree.presets'
+
+Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider:
+  arguments:
+    3:
+      setting: 'Neos.Flow.session.name'
+    4:
+      setting: 'Wwwision.Neos.NodeTreeApi.authenticationProviders'
