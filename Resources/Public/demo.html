@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Node Tree API Demo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+        :root {
+            --bg: #f6f7f9;
+            --panel: #ffffff;
+            --text: #1d2229;
+            --muted: #6b7380;
+            --border: #dde1e6;
+            --accent: #00adee;
+            --hover: #eef4f8;
+            --selected: #d8effa;
+            --danger: #c0392b;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1c20;
+                --panel: #23262b;
+                --text: #e4e6ea;
+                --muted: #969ca6;
+                --border: #3a3e45;
+                --accent: #26b8f0;
+                --hover: #2c3036;
+                --selected: #16384a;
+                --danger: #ef6b5c;
+            }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; }
+        header h1 { font-size: 16px; margin: 0 16px 0 0; align-self: center; }
+        label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+        input, select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; }
+        button { cursor: pointer; }
+        button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        main { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 16px; padding: 16px; }
+        @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
+        #tree { height: calc(100vh - 140px); overflow: auto; padding: 6px 0; }
+        ul { list-style: none; margin: 0; padding: 0; }
+        ul ul { padding-left: 16px; }
+        .row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; white-space: nowrap; border-radius: 3px; }
+        .row:hover { background: var(--hover); }
+        .row.selected { background: var(--selected); }
+        .toggle { width: 14px; text-align: center; color: var(--muted); flex: none; }
+        .icon { width: 16px; text-align: center; flex: none; color: var(--muted); }
+        .label { overflow: hidden; text-overflow: ellipsis; }
+        .virtual > .row .label { font-style: italic; }
+        .virtual > .row .icon { color: var(--accent); }
+        .disabled > .row .label { opacity: .5; text-decoration: line-through; }
+        .fallback > .row .label { opacity: .6; }
+        .badge { font-size: 11px; color: var(--muted); }
+        .more { padding: 2px 8px 2px 28px; color: var(--muted); font-size: 12px; }
+        .more button { font-size: 12px; padding: 1px 6px; }
+        .error { color: var(--danger); padding: 8px 12px; white-space: pre-wrap; }
+        #details { padding: 12px; overflow: auto; }
+        #details h2 { font-size: 14px; margin: 0 0 8px; }
+        pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+        #log { margin-top: 16px; font-size: 12px; color: var(--muted); }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Node Tree API</h1>
+    <label>Tree <select id="treeId"></select></label>
+    <label>Content repository <input id="contentRepository" value="default" size="8"></label>
+    <label>Workspace <input id="workspace" value="live" size="12"></label>
+    <label>Site <input id="site" value="neosdemo" size="10"></label>
+    <label>Dimensions <input id="dimensions" value='{"language":"en_US"}' size="20"></label>
+    <label>Limit <input id="limit" type="number" value="20" min="1" max="200" style="width: 5em"></label>
+    <label>Expand to <input id="expandTo" placeholder="item id" size="24"></label>
+    <button class="primary" id="load">Load</button>
+    <a href="/neos/node-tree-api/docs" target="_blank" style="align-self: center; color: var(--accent)">API docs</a>
+</header>
+<main>
+    <div class="panel" id="tree"></div>
+    <div class="panel" id="details">
+        <h2>Selected item</h2>
+        <pre id="selected">Click an item</pre>
+        <div id="log"></div>
+    </div>
+</main>
+<script>
+    const apiBase = new URL('/neos/node-tree-api/', window.location.href);
+    const $ = (id) => document.getElementById(id);
+    const settings = () => ({
+        tree: $('treeId').value,
+        contentRepository: $('contentRepository').value,
+        workspace: $('workspace').value,
+        site: $('site').value,
+        dimensions: $('dimensions').value,
+        limit: $('limit').value,
+    });
+
+    let requestCount = 0;
+
+    async function api(path, params = {}) {
+        const url = new URL(path, apiBase);
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== null && value !== undefined && value !== '') {
+                url.searchParams.set(key, value);
+            }
+        }
+        const started = performance.now();
+        const response = await fetch(url, {credentials: 'same-origin', headers: {Accept: 'application/json'}});
+        const body = await response.json();
+        $('log').textContent = `Request #${++requestCount}: ${decodeURIComponent(url.pathname + url.search)} → ${response.status} in ${Math.round(performance.now() - started)} ms`;
+        if (!response.ok) {
+            throw new Error(`${body.status} ${body.title}: ${body.detail ?? ''}${body.issues ? '\n' + JSON.stringify(body.issues, null, 2) : ''}`);
+        }
+        return body;
+    }
+
+    function listItems(extraParams) {
+        const s = settings();
+        return api(`${encodeURIComponent(s.contentRepository)}/${encodeURIComponent(s.workspace)}/trees/${encodeURIComponent(s.tree)}/items`, {
+            site: s.site,
+            dimensions: s.dimensions,
+            limit: s.limit,
+            ...extraParams,
+        });
+    }
+
+    function iconClass(icon) {
+        if (!icon) {
+            return 'fa-regular fa-circle';
+        }
+        if (icon.includes('fa-')) {
+            return icon;
+        }
+        return 'fa-solid fa-' + icon.replace(/^icon-/, '');
+    }
+
+    // Renders (a page of) a level into the <ul> of its parent (or the root). A page that is appended brings the
+    // sentinel for the next page, a page that is prepended the button for the previous one
+    function renderLevel(container, level, levelsByParentId, prepend = false) {
+        const list = container.querySelector(':scope > ul') ?? container.appendChild(document.createElement('ul'));
+        const isFirstPage = list.children.length === 0;
+        const fragment = document.createDocumentFragment();
+        for (const item of level.items) {
+            fragment.appendChild(renderItem(item, levelsByParentId));
+        }
+        if (prepend) {
+            list.querySelector(':scope > .more.previous')?.remove();
+            list.prepend(fragment);
+        } else {
+            list.querySelector(':scope > .more.next')?.remove();
+            list.appendChild(fragment);
+        }
+        if (level.previousCursor && (prepend || isFirstPage)) {
+            const more = document.createElement('li');
+            more.className = 'more previous';
+            const button = document.createElement('button');
+            button.textContent = 'Load previous';
+            button.onclick = () => loadPage(container, level.parentId, level.previousCursor, true);
+            more.appendChild(button);
+            list.prepend(more);
+        }
+        if (level.nextCursor && (!prepend || isFirstPage)) {
+            const more = document.createElement('li');
+            more.className = 'more next';
+            more.textContent = 'Loading more…';
+            list.appendChild(more);
+            // endless scrolling: load the next page as soon as its sentinel becomes visible
+            const observer = new IntersectionObserver((entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    observer.disconnect();
+                    loadPage(container, level.parentId, level.nextCursor, false);
+                }
+            }, {root: $('tree')});
+            observer.observe(more);
+        }
+    }
+
+    async function loadPage(container, parentId, cursor, prepend) {
+        try {
+            const result = await listItems({parent: parentId, cursor});
+            renderLevel(container, result.levels[0], {}, prepend);
+        } catch (error) {
+            showError(container, error);
+        }
+    }
+
+    function renderItem(item, levelsByParentId) {
+        const element = document.createElement('li');
+        element.dataset.id = item.id;
+        element.classList.toggle('virtual', item.node === null);
+        element.classList.toggle('disabled', item.node?.isDisabled === true);
+        element.classList.toggle('fallback', item.node?.isFallback === true);
+
+        const row = document.createElement('div');
+        row.className = 'row';
+        const toggle = document.createElement('span');
+        toggle.className = 'toggle';
+        const icon = document.createElement('i');
+        icon.className = 'icon ' + iconClass(item.icon);
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.textContent = item.label;
+        row.append(toggle, icon, label);
+        if (item.node?.isHiddenInMenu) {
+            const badge = document.createElement('i');
+            badge.className = 'badge fa-solid fa-eye-slash';
+            badge.title = 'Hidden in menus';
+            row.appendChild(badge);
+        }
+        element.appendChild(row);
+
+        let expanded = false;
+        let loaded = false;
+        const setExpanded = (value) => {
+            expanded = value;
+            toggle.innerHTML = item.hasChildren ? `<i class="fa-solid fa-caret-${expanded ? 'down' : 'right'}"></i>` : '';
+            const children = element.querySelector(':scope > ul');
+            if (children) {
+                children.hidden = !expanded;
+            }
+        };
+        toggle.onclick = async (event) => {
+            event.stopPropagation();
+            if (!item.hasChildren) {
+                return;
+            }
+            if (!loaded) {
+                loaded = true;
+                setExpanded(true);
+                await loadPage(element, item.id, null, false);
+                return;
+            }
+            setExpanded(!expanded);
+        };
+        row.onclick = () => {
+            document.querySelectorAll('.row.selected').forEach((selected) => selected.classList.remove('selected'));
+            row.classList.add('selected');
+            $('selected').textContent = JSON.stringify(item, null, 2);
+        };
+
+        // levels that came along with "expandTo"
+        const level = levelsByParentId[item.id];
+        if (level) {
+            loaded = true;
+            renderLevel(element, level, levelsByParentId);
+            setExpanded(true);
+        } else {
+            setExpanded(false);
+        }
+        return element;
+    }
+
+    function showError(container, error) {
+        const element = document.createElement('div');
+        element.className = 'error';
+        element.textContent = error.message;
+        container.appendChild(element);
+    }
+
+    async function load() {
+        const tree = $('tree');
+        tree.replaceChildren();
+        try {
+            const expandTo = $('expandTo').value.trim();
+            const result = await listItems({expandTo});
+            const levelsByParentId = Object.fromEntries(result.levels.filter((level) => level.parentId !== null).map((level) => [level.parentId, level]));
+            renderLevel(tree, result.levels[0], levelsByParentId);
+            if (expandTo) {
+                const target = tree.querySelector(`li[data-id="${CSS.escape(expandTo)}"] > .row`);
+                target?.click();
+                target?.scrollIntoView({block: 'center'});
+            }
+        } catch (error) {
+            showError(tree, error);
+        }
+    }
+
+    async function init() {
+        try {
+            const result = await api('trees');
+            for (const tree of result) {
+                const option = document.createElement('option');
+                option.value = tree.id;
+                option.textContent = tree.label;
+                $('treeId').appendChild(option);
+            }
+            await load();
+        } catch (error) {
+            showError($('tree'), new Error(error.message + '\n\nYou need to be logged in to the Neos backend in this browser.'));
+        }
+    }
+
+    $('load').onclick = load;
+    $('treeId').onchange = load;
+    init();
+</script>
+</body>
+</html>
