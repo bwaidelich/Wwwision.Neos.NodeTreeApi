@@ -18,6 +18,7 @@ use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\ContentRepositoryRegistry\Exception\ContentRepositoryNotFoundException;
 use Neos\Flow\Annotations as Flow;
+use Neos\Flow\I18n\Formatter\DatetimeFormatter;
 use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
@@ -47,6 +48,7 @@ final readonly class TreeLoader
         private ContentRepositoryRegistry $contentRepositoryRegistry,
         private NodeLabelGeneratorInterface $nodeLabelGenerator,
         private LabelTranslator $labelTranslator,
+        private DatetimeFormatter $datetimeFormatter,
     ) {
     }
 
@@ -67,7 +69,7 @@ final readonly class TreeLoader
         $tree = $this->treeDefinitions->get($treeId) ?? throw new NotFound(sprintf('There is no tree "%s"', $treeId->value), 1790060601);
         $contentRepository = $this->contentRepository($contentRepositoryId);
         $subgraph = $this->subgraph($contentRepository, $workspaceName, $dimensionSpacePoint);
-        $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodeLabelGenerator, $this->labelTranslator->locale());
+        $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodeLabelGenerator, $this->labelTranslator->locale(), $this->datetimeFormatter);
         $siteNode = $this->siteNode($subgraph, $siteNodeName);
 
         if ($expandTo !== null) {

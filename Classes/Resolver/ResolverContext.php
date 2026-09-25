@@ -9,6 +9,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Nodes;
 use Neos\Flow\Annotations as Flow;
+use Neos\Flow\I18n\Formatter\DatetimeFormatter;
 use Neos\Flow\I18n\Locale;
 use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
@@ -29,6 +30,7 @@ final readonly class ResolverContext
         // the interface language of the current user
         public Locale $locale,
         private NodeLabelGeneratorInterface $nodeLabelGenerator,
+        private DatetimeFormatter $datetimeFormatter,
     ) {
     }
 
@@ -49,6 +51,16 @@ final readonly class ResolverContext
     public function nodeItems(Nodes $nodes): array
     {
         return array_values($nodes->map($this->nodeItem(...)));
+    }
+
+    /**
+     * Formats a date in the interface language of the current user
+     *
+     * @param string $pattern a CLDR date pattern, e.g. "LLLL y" for "September 2026"
+     */
+    public function formatDate(\DateTimeInterface $date, string $pattern): string
+    {
+        return $this->datetimeFormatter->formatDateTimeWithCustomPattern($date, $pattern, $this->locale);
     }
 
     /**

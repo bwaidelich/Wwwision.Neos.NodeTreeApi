@@ -1,0 +1,16 @@
+# An example for virtual items: the postings of the Neos.Demo blog, grouped by year and month
+Wwwision:
+  Neos:
+    NodeTreeApi:
+      resolvers:
+        'blogPostingsByDate':
+          className: 'Wwwision\Neos\NodeTreeApi\Resolver\DateGroupingResolver'
+          options:
+            groupedNodeType: 'Neos.Demo:Document.BlogPosting'
+            property: 'datePublished'
+      trees:
+        'default':
+          childrenResolvers:
+            'neosDemoBlog':
+              nodeType: 'Neos.Demo:Document.Blog'
+              resolver: 'blogPostingsByDate'
