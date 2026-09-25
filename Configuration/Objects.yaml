@@ -10,6 +10,12 @@ Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitionsFactory:
     2:
       setting: 'Neos.Neos.userInterface.navigateComponent.nodeTree.presets'
 
+Wwwision\Neos\NodeTreeApi\Tree\ResolverRegistry:
+  scope: singleton
+  arguments:
+    1:
+      setting: 'Wwwision.Neos.NodeTreeApi.resolvers'
+
 Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider:
   arguments:
     3:
