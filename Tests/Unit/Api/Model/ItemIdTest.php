@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Wwwision\Neos\NodeTreeApi\Tests\Unit\Api\Model;
 
 use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateId;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
 use Wwwision\Neos\NodeTreeApi\Tree\InvalidRequest;
@@ -49,9 +50,7 @@ final class ItemIdTest extends TestCase
         yield 'virtual with invalid characters' => ['v.byDate.a+b'];
     }
 
-    /**
-     * @dataProvider invalidItemIds
-     */
+    #[DataProvider('invalidItemIds')]
     public function testInvalidItemIdsAreRejected(string $value): void
     {
         $this->expectException(\Throwable::class);

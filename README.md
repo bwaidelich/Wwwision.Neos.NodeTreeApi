@@ -170,3 +170,15 @@ the items: `nodeItem()` for nodes, `virtualItem()` for virtual items with a payl
 ```bash
 bin/phpunit -c Build/BuildEssentials/PhpUnit/UnitTests.xml DistributionPackages/Wwwision.Neos.NodeTreeApi/Tests/Unit
 ```
+
+The functional tests send requests through Flow, on a content repository of their own ("nodetreetest", see
+`Configuration/Testing/Settings.yaml`) with the node types of Neos.Demo. They need the database of the Testing
+context to be migrated once:
+
+```bash
+FLOW_CONTEXT=Testing ./flow doctrine:migrate
+FLOW_CONTEXT=Testing bin/phpunit -c Build/BuildEssentials/PhpUnit/FunctionalTests.xml DistributionPackages/Wwwision.Neos.NodeTreeApi/Tests/Functional
+```
+
+Unlike other functional tests they don't drop the database after each test, since the content is created once per
+test run.

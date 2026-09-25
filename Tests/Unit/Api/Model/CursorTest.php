@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Wwwision\Neos\NodeTreeApi\Tests\Unit\Api\Model;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
 use Wwwision\Neos\NodeTreeApi\Tree\InvalidRequest;
@@ -31,9 +32,7 @@ final class CursorTest extends TestCase
         yield 'payload is no object' => ['eyJyIjoiZGVmYXVsdCIsInAiOiJ4In0'];
     }
 
-    /**
-     * @dataProvider malformedCursors
-     */
+    #[DataProvider('malformedCursors')]
     public function testMalformedCursorsAreInvalidRequests(string $value): void
     {
         $this->expectException(InvalidRequest::class);

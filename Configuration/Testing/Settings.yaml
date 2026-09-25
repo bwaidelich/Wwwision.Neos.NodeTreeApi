@@ -1,0 +1,40 @@
+# The functional tests work on a content repository of their own, with trees that don't depend on the presets of the
+# distribution
+Neos:
+  ContentRepositoryRegistry:
+    contentRepositories:
+      'nodetreetest':
+        preset: 'default'
+        contentDimensions:
+          language:
+            values:
+              'en_US':
+                specializations:
+                  'en_UK': []
+              'de': []
+
+Wwwision:
+  Neos:
+    NodeTreeApi:
+      derivedFromPresets: false
+      authenticationProviders:
+        # the provider of FunctionalTestCase::authenticateRoles()
+        'TestingProvider': true
+      resolvers:
+        'postingsByDate':
+          className: 'Wwwision\Neos\NodeTreeApi\Resolver\DateGroupingResolver'
+          options:
+            groupedNodeType: 'Neos.Demo:Document.BlogPosting'
+            property: 'datePublished'
+      trees:
+        'documents':
+          label: 'Neos.Neos:Main:document'
+          icon: 'sitemap'
+          baseNodeType: 'Neos.Neos:Document'
+          childrenResolvers:
+            'blog':
+              nodeType: 'Neos.Demo:Document.Blog'
+              resolver: 'postingsByDate'
+        'withoutBlogs':
+          label: 'Without blogs'
+          baseNodeType: 'Neos.Neos:Document,!Neos.Demo:Document.Blog'

@@ -24,6 +24,7 @@ use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryI
 use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateClassification;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateId;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Serializer;
 use Wwwision\Neos\NodeTreeApi\Resolver\SiblingPagination;
@@ -90,9 +91,9 @@ final class SiblingPaginationTest extends TestCase
     }
 
     /**
-     * @dataProvider windows
      * @param list<string> $expectedIds
      */
+    #[DataProvider('windows')]
     public function testWindowsAroundANodeAreFilledFromBothSides(string $nodeId, int $limit, array $expectedIds, bool $hasPrevious, bool $hasNext): void
     {
         $page = $this->pagination->around(self::node($nodeId), $limit);
@@ -113,9 +114,9 @@ final class SiblingPaginationTest extends TestCase
     }
 
     /**
-     * @dataProvider malformedCursors
      * @param array<mixed> $cursor
      */
+    #[DataProvider('malformedCursors')]
     public function testMalformedCursorsAreInvalidRequests(array $cursor): void
     {
         $this->expectException(InvalidRequest::class);
