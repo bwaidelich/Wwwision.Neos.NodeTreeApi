@@ -109,10 +109,19 @@ final readonly class TreeLoader
     private function subgraph(ContentRepository $contentRepository, string $workspaceName, string $dimensionSpacePoint): ContentSubgraphInterface
     {
         $workspace = WorkspaceName::tryFromString($workspaceName) ?? throw new InvalidRequest(sprintf('"%s" is no valid workspace name', $workspaceName), 1790060606);
+        $invalidDimensions = new InvalidRequest('"dimensions" has to be a JSON object with the dimension values, e.g. {"language":"en_US"}', 1790060607);
         try {
-            $dimensions = DimensionSpacePoint::fromJsonString($dimensionSpacePoint);
-        } catch (\Exception) {
-            throw new InvalidRequest('"dimensions" has to be a JSON object with the dimension values, e.g. {"language":"en_US"}', 1790060607);
+            $dimensionValues = json_decode($dimensionSpacePoint, true, 2, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw $invalidDimensions;
+        }
+        if (!is_array($dimensionValues) || array_filter($dimensionValues, is_string(...)) !== $dimensionValues) {
+            throw $invalidDimensions;
+        }
+        try {
+            $dimensions = DimensionSpacePoint::fromArray($dimensionValues);
+        } catch (\InvalidArgumentException) {
+            throw $invalidDimensions;
         }
         if (!$contentRepository->getVariationGraph()->getDimensionSpacePoints()->contains($dimensions)) {
             throw new InvalidRequest(sprintf('The dimensions %s are not configured in content repository "%s"', $dimensions->toJson(), $contentRepository->id->value), 1790060608);
