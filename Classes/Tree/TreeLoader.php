@@ -9,6 +9,7 @@ use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
+use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindAncestorNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
@@ -61,6 +62,7 @@ final readonly class TreeLoader
         ItemId|null $parentId,
         Cursor|null $cursor,
         int $limit,
+        ItemId|null $expandTo = null,
     ): Levels {
         $tree = $this->treeDefinitions->get($treeId) ?? throw new NotFound(sprintf('There is no tree "%s"', $treeId->value), 1790060601);
         $contentRepository = $this->contentRepository($contentRepositoryId);
@@ -68,6 +70,12 @@ final readonly class TreeLoader
         $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodeLabelGenerator, $this->labelTranslator->locale());
         $siteNode = $this->siteNode($subgraph, $siteNodeName);
 
+        if ($expandTo !== null) {
+            if ($parentId !== null || $cursor !== null) {
+                throw new InvalidRequest('"expandTo" can\'t be combined with "parent" or "cursor"', 1790060614);
+            }
+            return $this->render($request, ...$this->expandTo($request, $siteNode, $expandTo, $limit));
+        }
         if ($parentId === null) {
             if ($cursor !== null) {
                 throw new InvalidRequest('The root level has only one page, a "cursor" requires a "parent"', 1790060602);
@@ -131,6 +139,50 @@ final readonly class TreeLoader
     private function rootLevel(TreeRequest $request, Node $siteNode): ResolvedLevel
     {
         return new ResolvedLevel(null, [$request->context(TreeDefinition::DEFAULT_RESOLVER)->nodeItem($siteNode)]);
+    }
+
+    /**
+     * The root level, followed by the levels down to the one containing the target – each a window around the
+     * respective ancestor of the target. Virtual levels in between are added by the resolvers that create them
+     *
+     * @return non-empty-list<array{string|null, ResolvedLevel}>
+     */
+    private function expandTo(TreeRequest $request, Node $siteNode, ItemId $targetId, int $limit): array
+    {
+        if (!$targetId->isNode()) {
+            throw new InvalidRequest('"expandTo" has to be the id of an item that represents a node', 1790060615);
+        }
+        $notFound = new NotFound(sprintf('There is no item "%s" in this tree', $targetId->value), 1790060616);
+        $target = $request->subgraph->findNodeById($targetId->nodeAggregateId()) ?? throw $notFound;
+        $levels = [[null, $this->rootLevel($request, $siteNode)]];
+        if ($target->aggregateId->equals($siteNode->aggregateId)) {
+            return $levels;
+        }
+
+        // the nodes from the child of the site node down to the target
+        $path = [$target];
+        $isBelowSiteNode = false;
+        foreach ($request->subgraph->findAncestorNodes($target->aggregateId, FindAncestorNodesFilter::create()) as $ancestor) {
+            if ($ancestor->aggregateId->equals($siteNode->aggregateId)) {
+                $isBelowSiteNode = true;
+                break;
+            }
+            $path[] = $ancestor;
+        }
+        $path = array_reverse($path);
+        if (!$isBelowSiteNode || array_any($path, static fn (Node $node) => !$request->contains($node))) {
+            throw $notFound;
+        }
+
+        $parent = new ParentItem(ItemId::forNode($siteNode->aggregateId), $siteNode);
+        foreach ($path as $node) {
+            [$resolverKey, $resolver] = $request->resolverFor($parent);
+            foreach ($resolver->resolveAround($request->context($resolverKey), $parent, $node, $limit) as $level) {
+                $levels[] = [$resolverKey, $level];
+            }
+            $parent = new ParentItem(ItemId::forNode($node->aggregateId), $node);
+        }
+        return $levels;
     }
 
     private function parentItem(TreeRequest $request, ItemId $parentId): ParentItem

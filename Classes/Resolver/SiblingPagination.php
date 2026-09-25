@@ -65,22 +65,26 @@ final readonly class SiblingPagination
     }
 
     /**
-     * A page with $node in the middle
+     * A page with $node in the middle – or closer to the start/end, if there are not enough siblings before/after it
      *
      * @return array{nodes: Nodes, previousCursor: array<mixed>|null, nextCursor: array<mixed>|null}
      */
     public function around(Node $node, int $limit): array
     {
-        $numberOfPreceding = intdiv($limit - 1, 2);
-        $numberOfSucceeding = $limit - 1 - $numberOfPreceding;
-        [$preceding, $hasPreceding] = self::slice($this->subgraph->findPrecedingSiblingNodes($node->aggregateId, FindPrecedingSiblingNodesFilter::create(
+        // up to $limit on either side: $limit - 1 to fill the page from one side, plus one to tell whether there are more
+        $allPreceding = $this->subgraph->findPrecedingSiblingNodes($node->aggregateId, FindPrecedingSiblingNodesFilter::create(
             nodeTypes: $this->nodeTypes,
-            pagination: Pagination::fromLimitAndOffset($numberOfPreceding + 1, 0),
-        )), $numberOfPreceding);
-        [$succeeding, $hasSucceeding] = self::slice($this->subgraph->findSucceedingSiblingNodes($node->aggregateId, FindSucceedingSiblingNodesFilter::create(
+            pagination: Pagination::fromLimitAndOffset($limit, 0),
+        ));
+        $allSucceeding = $this->subgraph->findSucceedingSiblingNodes($node->aggregateId, FindSucceedingSiblingNodesFilter::create(
             nodeTypes: $this->nodeTypes,
-            pagination: Pagination::fromLimitAndOffset($numberOfSucceeding + 1, 0),
-        )), $numberOfSucceeding);
+            pagination: Pagination::fromLimitAndOffset($limit, 0),
+        ));
+        $half = intdiv($limit - 1, 2);
+        $numberOfPreceding = min($allPreceding->count(), $half + max(0, $limit - 1 - $half - $allSucceeding->count()));
+        $numberOfSucceeding = min($allSucceeding->count(), $limit - 1 - $numberOfPreceding);
+        [$preceding, $hasPreceding] = self::slice($allPreceding, $numberOfPreceding);
+        [$succeeding, $hasSucceeding] = self::slice($allSucceeding, $numberOfSucceeding);
         $nodes = $preceding->reverse()->append($node)->merge($succeeding);
         return [
             'nodes' => $nodes,

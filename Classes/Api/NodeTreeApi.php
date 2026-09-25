@@ -53,7 +53,8 @@ final readonly class NodeTreeApi
     }
 
     /**
-     * Without "parent", this returns the root level: the site node. With "parent", a page of the parent's children
+     * Without "parent", this returns the root level: the site node. With "parent", a page of the parent's children.
+     * With "expandTo", all levels that are needed to show the given item
      */
     #[Operation(
         path: '/{contentRepository}/{workspace}/trees/{tree}/items',
@@ -74,9 +75,11 @@ final readonly class NodeTreeApi
         #[Parameter(in: ParameterLocation::query, description: 'The "previousCursor" or "nextCursor" of a level of the same parent')]
         Cursor|null $cursor = null,
         Limit|null $limit = null,
+        #[Parameter(in: ParameterLocation::query, description: 'An item (representing a node) to reveal: returns the root level and all levels down to the one containing it, each around the respective ancestor. Can\'t be combined with "parent" or "cursor"')]
+        ItemId|null $expandTo = null,
     ): ItemsResult|BadRequest|Forbidden|NotFound {
         try {
-            $levels = $this->treeLoader->load($contentRepository, $workspace, $tree, $site, $dimensions, $parent, $cursor, ($limit ?? Limit::default())->value);
+            $levels = $this->treeLoader->load($contentRepository, $workspace, $tree, $site, $dimensions, $parent, $cursor, ($limit ?? Limit::default())->value, $expandTo);
         } catch (InvalidRequest $exception) {
             return new BadRequest($exception->getMessage());
         } catch (ForbiddenException $exception) {
