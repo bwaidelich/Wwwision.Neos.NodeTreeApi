@@ -28,6 +28,7 @@ browser that is logged in to Neos, open
 | --- | --- |
 | `GET /trees` | The available trees: `[{id, label, icon}]` |
 | `GET /trees/{tree}/items` | Levels of a tree, see below |
+| `GET /trees/{tree}/items/{item}/drop-keys` | Where an item can be moved to, see [Drag and drop](#drag-and-drop) |
 
 The site is detected from the domain of the request, like for the rest of Neos (a site with a matching domain, or else
 the first online site), and determines the content repository. All query parameters of `items` are optional:
@@ -143,7 +144,19 @@ Items tell how they can be moved – without the client knowing anything about n
 - `dropKey`: identifies the node type constraints for the children of the item. Null if nothing may be moved into it:
   for virtual items, and nodes the user may not edit
 
-`context.writable` is false if the user may not change the workspace – then no item is draggable. Errors are
+`context.writable` is false if the user may not change the workspace – then no item is draggable.
+
+When an item starts being dragged, `GET /trees/{tree}/items/{item}/drop-keys` returns `{"dropKeys": [...]}`: the keys
+of all items it can be moved into. With those, the client decides locally – without further requests, also for levels
+that are loaded while dragging:
+
+- *into* X, if the `dropKey` of X is one of them
+- *before* or *after* X, if X is `sortable` and the `dropKey` of the parent of its level is one of them
+- never into the dragged item itself or its descendants – which the client knows from its levels
+
+The drop keys only depend on node types (a key is the node type of an item, or the type of its parent plus its name
+for tethered nodes), so the request costs the same for any size of the tree. Everything else is checked when the item
+is moved. Errors are
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem documents: `400` for invalid input (including malformed
 cursors), `401` without backend session, `403` if the workspace may not be read, `404` for unknown trees, sites or
 items.

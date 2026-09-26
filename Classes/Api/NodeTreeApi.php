@@ -11,6 +11,8 @@ use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Support\ParameterLocation;
 use Psr\Http\Message\ServerRequestInterface;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
+use Wwwision\Neos\NodeTreeApi\Api\Model\DropKeys;
+use Wwwision\Neos\NodeTreeApi\Api\Model\DropKeysResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemsResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Limit;
@@ -23,6 +25,7 @@ use Wwwision\Neos\NodeTreeApi\Api\Response\NotFound;
 use Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider;
 use Wwwision\Neos\NodeTreeApi\Tree\Forbidden as ForbiddenException;
 use Wwwision\Neos\NodeTreeApi\Tree\InvalidRequest;
+use Wwwision\Neos\NodeTreeApi\Tree\ItemMover;
 use Wwwision\Neos\NodeTreeApi\Tree\LabelTranslator;
 use Wwwision\Neos\NodeTreeApi\Tree\NotFound as NotFoundException;
 use Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions;
@@ -40,6 +43,7 @@ final readonly class NodeTreeApi
         private LabelTranslator $labelTranslator,
         private TreeRequestFactory $treeRequestFactory,
         private TreeLoader $treeLoader,
+        private ItemMover $itemMover,
     ) {
     }
 
@@ -86,6 +90,29 @@ final readonly class NodeTreeApi
         ItemId|null $expandTo = null,
     ): ItemsResult|BadRequest|Forbidden|NotFound {
         return $this->handle($tree, $request, $workspace, $dimensions, fn (TreeRequest $treeRequest) => $this->treeLoader->load($treeRequest, $parent, $cursor, ($limit ?? Limit::default())->value, $expandTo));
+    }
+
+    /**
+     * To be requested when an item starts being dragged: the constraints only depend on node types, so this is the same
+     * no matter how many items are loaded. Whether the item can be dragged at all is told by its "draggable" flag
+     */
+    #[Operation(
+        path: '/trees/{tree}/items/{item}/drop-keys',
+        method: 'GET',
+        summary: 'List the drop keys of the items an item can be moved into',
+        security: BackendSessionAuthContextProvider::SCHEME,
+    )]
+    public function listDropKeys(
+        TreeId $tree,
+        #[Parameter(in: ParameterLocation::path, description: 'The item (representing a node) to move')]
+        ItemId $item,
+        ServerRequestInterface $request,
+        #[Parameter(in: ParameterLocation::query, description: 'The workspace, as for "listItems"')]
+        string|null $workspace = null,
+        #[Parameter(in: ParameterLocation::query, description: 'The dimension values, as for "listItems"')]
+        string|null $dimensions = null,
+    ): DropKeysResult|BadRequest|Forbidden|NotFound {
+        return $this->handle($tree, $request, $workspace, $dimensions, fn (TreeRequest $treeRequest) => new DropKeysResult(new DropKeys(...$this->itemMover->dropKeys($treeRequest, $item))));
     }
 
     /**

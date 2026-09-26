@@ -410,6 +410,40 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertSame([false, true, null], self::dragAndDrop($result['levels'][0]['items'][1]));
     }
 
+    public function testDropKeysOnlyDependOnTheNodeTypeOfTheItem(): void
+    {
+        $response = $this->request('/trees/documents/items/n.page-1/drop-keys');
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        // pages can be moved into the homepage and into other pages, but not into blogs, postings, categories or the
+        // tethered "not found" page. The keys include all types of the tree, of all installed packages
+        $dropKeys = self::json($response)['dropKeys'];
+        self::assertContains('Neos.Demo:Document.Homepage', $dropKeys);
+        self::assertContains('Neos.Demo:Document.Page', $dropKeys);
+        foreach (['Neos.Demo:Document.Blog', 'Neos.Demo:Document.BlogPosting', 'Neos.Demo:Document.BlogCategory', 'Neos.Demo:Document.Homepage/notfound'] as $dropKey) {
+            self::assertNotContains($dropKey, $dropKeys);
+        }
+        $postingDropKeys = self::json($this->request('/trees/documents/items/n.post-a/drop-keys'))['dropKeys'];
+        self::assertContains('Neos.Demo:Document.Blog', $postingDropKeys);
+        self::assertNotContains('Neos.Demo:Document.Page', $postingDropKeys);
+    }
+
+    /**
+     * @return iterable<array{string, int}>
+     */
+    public static function invalidDropKeyRequests(): iterable
+    {
+        yield 'virtual item' => ['v.postingsByDate.e30', 400];
+        yield 'unknown item' => ['n.unknown', 404];
+        yield 'node that is not part of the tree' => ['n.blog', 404];
+    }
+
+    #[DataProvider('invalidDropKeyRequests')]
+    public function testDropKeysOfInvalidItemsAreAnsweredWithProblemDocuments(string $itemId, int $expectedStatus): void
+    {
+        self::assertProblem($this->request('/trees/withoutBlogs/items/' . $itemId . '/drop-keys'), $expectedStatus);
+    }
+
     private function createContent(): void
     {
         $contentRepositoryId = ContentRepositoryId::fromString(self::CONTENT_REPOSITORY);
