@@ -15,6 +15,6 @@ final readonly class Forbidden extends ProblemResponse
 
     public static function description(): string
     {
-        return 'The workspace may not be read';
+        return 'The current user may not read the workspace, or not change it as requested';
     }
 }

@@ -8,6 +8,7 @@ use Neos\Neos\FrontendRouting\SiteDetection\SiteDetectionFailedException;
 use Neos\Neos\FrontendRouting\SiteDetection\SiteDetectionResult;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
+use Neos\OpenApi\Attributes\RequestBody;
 use Neos\OpenApi\Support\ParameterLocation;
 use Psr\Http\Message\ServerRequestInterface;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
@@ -16,13 +17,17 @@ use Wwwision\Neos\NodeTreeApi\Api\Model\DropKeysResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemsResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Limit;
+use Wwwision\Neos\NodeTreeApi\Api\Model\MoveResult;
+use Wwwision\Neos\NodeTreeApi\Api\Model\MoveTarget;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Tree;
 use Wwwision\Neos\NodeTreeApi\Api\Model\TreeId;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Trees;
 use Wwwision\Neos\NodeTreeApi\Api\Response\BadRequest;
+use Wwwision\Neos\NodeTreeApi\Api\Response\Conflict;
 use Wwwision\Neos\NodeTreeApi\Api\Response\Forbidden;
 use Wwwision\Neos\NodeTreeApi\Api\Response\NotFound;
 use Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider;
+use Wwwision\Neos\NodeTreeApi\Tree\Conflict as ConflictException;
 use Wwwision\Neos\NodeTreeApi\Tree\Forbidden as ForbiddenException;
 use Wwwision\Neos\NodeTreeApi\Tree\InvalidRequest;
 use Wwwision\Neos\NodeTreeApi\Tree\ItemMover;
@@ -113,6 +118,47 @@ final readonly class NodeTreeApi
         string|null $dimensions = null,
     ): DropKeysResult|BadRequest|Forbidden|NotFound {
         return $this->handle($tree, $request, $workspace, $dimensions, fn (TreeRequest $treeRequest) => new DropKeysResult(new DropKeys(...$this->itemMover->dropKeys($treeRequest, $item))));
+    }
+
+    /**
+     * Moves the node an item represents: "into" another item as its last child, or "before"/"after" another item
+     *
+     * The item has to be "draggable". The user needs edit permission on the node and on its new parent, and the move
+     * has to comply with the node type constraints and the rules of the resolvers (see "sortable" and "dropKey"). The
+     * dimensions the move applies to are defined by the option "moveNodeStrategy" of the node type
+     *
+     * Requires the content type "application/json", which browsers don't send cross-origin without CORS preflight
+     */
+    #[Operation(
+        path: '/trees/{tree}/items/{item}/move',
+        method: 'POST',
+        summary: 'Move an item',
+        security: BackendSessionAuthContextProvider::SCHEME,
+    )]
+    public function moveItem(
+        TreeId $tree,
+        #[Parameter(in: ParameterLocation::path, description: 'The item (representing a node) to move')]
+        ItemId $item,
+        #[RequestBody(description: 'Where to move the item')]
+        MoveTarget $body,
+        ServerRequestInterface $request,
+        #[Parameter(in: ParameterLocation::query, description: 'The workspace, as for "listItems"')]
+        string|null $workspace = null,
+        #[Parameter(in: ParameterLocation::query, description: 'The dimension values, as for "listItems"')]
+        string|null $dimensions = null,
+        #[Parameter(in: ParameterLocation::query, description: 'The maximum number of items per level of the result')]
+        Limit|null $limit = null,
+    ): MoveResult|BadRequest|Forbidden|NotFound|Conflict {
+        if (!str_starts_with(strtolower($request->getHeaderLine('Content-Type')), 'application/json')) {
+            return new BadRequest('Moving an item requires the content type "application/json"');
+        }
+        return $this->handle($tree, $request, $workspace, $dimensions, function (TreeRequest $treeRequest) use ($item, $body, $limit): MoveResult|Conflict {
+            try {
+                return $this->itemMover->move($treeRequest, $item, $body, ($limit ?? Limit::default())->value);
+            } catch (ConflictException $exception) {
+                return new Conflict($exception->getMessage());
+            }
+        });
     }
 
     /**

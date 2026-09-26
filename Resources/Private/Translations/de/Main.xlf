@@ -22,6 +22,26 @@
         <source>Not translated yet, shown from {0}</source>
         <target state="final">Noch nicht übersetzt, angezeigt aus {0}</target>
       </trans-unit>
+      <trans-unit id="move.notMovable" xml:space="preserve">
+        <source>This item can't be moved</source>
+        <target state="final">Dieses Element kann nicht verschoben werden</target>
+      </trans-unit>
+      <trans-unit id="move.notAllowedThere" xml:space="preserve">
+        <source>The item can't be moved there</source>
+        <target state="final">Das Element kann nicht dorthin verschoben werden</target>
+      </trans-unit>
+      <trans-unit id="move.forbiddenWorkspace" xml:space="preserve">
+        <source>You may not change the workspace "{0}"</source>
+        <target state="final">Sie dürfen den Arbeitsbereich "{0}" nicht ändern</target>
+      </trans-unit>
+      <trans-unit id="move.forbiddenItem" xml:space="preserve">
+        <source>You may not change this item</source>
+        <target state="final">Sie dürfen dieses Element nicht ändern</target>
+      </trans-unit>
+      <trans-unit id="move.forbiddenTarget" xml:space="preserve">
+        <source>You may not change the place this item is to be moved to</source>
+        <target state="final">Sie dürfen die Stelle, an die das Element verschoben werden soll, nicht ändern</target>
+      </trans-unit>
     </body>
   </file>
 </xliff>

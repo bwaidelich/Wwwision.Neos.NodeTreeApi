@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Wwwision\Neos\NodeTreeApi\Tree;
 
+use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\Flow\Annotations as Flow;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
@@ -78,6 +79,21 @@ final readonly class TreeLoader
             }
         }
         return new ItemsResult($request->context, $this->render($request, ...$levels));
+    }
+
+    /**
+     * The item that represents $node, as it is listed in the level of its parent
+     */
+    public function nodeItem(TreeRequest $request, Node $node): TreeItem
+    {
+        if ($node->aggregateId->equals($request->siteNode->aggregateId)) {
+            $level = [null, $this->rootLevel($request)];
+        } else {
+            $parent = $request->subgraph->findParentNode($node->aggregateId);
+            $resolverKey = $parent !== null ? $request->resolverFor(new ParentItem(ItemId::forNode($parent->aggregateId), $parent))[0] : TreeDefinition::DEFAULT_RESOLVER;
+            $level = [$resolverKey, new ResolvedLevel(null, [$request->context($resolverKey)->nodeItem($node)])];
+        }
+        return $this->render($request, $level)->levels[0]->items->items[0];
     }
 
     private function rootLevel(TreeRequest $request): ResolvedLevel

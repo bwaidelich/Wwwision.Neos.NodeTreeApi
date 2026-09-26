@@ -17,6 +17,21 @@
       <trans-unit id="badge.fallback" xml:space="preserve">
         <source>Not translated yet, shown from {0}</source>
       </trans-unit>
+      <trans-unit id="move.notMovable" xml:space="preserve">
+        <source>This item can't be moved</source>
+      </trans-unit>
+      <trans-unit id="move.notAllowedThere" xml:space="preserve">
+        <source>The item can't be moved there</source>
+      </trans-unit>
+      <trans-unit id="move.forbiddenWorkspace" xml:space="preserve">
+        <source>You may not change the workspace "{0}"</source>
+      </trans-unit>
+      <trans-unit id="move.forbiddenItem" xml:space="preserve">
+        <source>You may not change this item</source>
+      </trans-unit>
+      <trans-unit id="move.forbiddenTarget" xml:space="preserve">
+        <source>You may not change the place this item is to be moved to</source>
+      </trans-unit>
     </body>
   </file>
 </xliff>

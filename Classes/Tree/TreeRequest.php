@@ -45,10 +45,11 @@ final readonly class TreeRequest
     }
 
     /**
-     * The same request with a new subgraph, e.g. to see the result of a command
+     * The same request with a new subgraph, to see the result of a command
      */
-    public function withSubgraph(ContentSubgraphInterface $subgraph): self
+    public function refreshed(): self
     {
+        $subgraph = $this->contentRepository->getContentSubgraph($this->subgraph->getWorkspaceName(), $this->subgraph->getDimensionSpacePoint());
         return new self($this->tree, $this->contentRepository, $subgraph, $this->context, $this->siteNode, $this->permissions, $this->nodeTypeManager, $this->resolverRegistry, $this->nodePresenter, $this->locale, $this->datetimeFormatter);
     }
 

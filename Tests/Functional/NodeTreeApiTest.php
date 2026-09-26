@@ -444,6 +444,105 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertProblem($this->request('/trees/withoutBlogs/items/' . $itemId . '/drop-keys'), $expectedStatus);
     }
 
+    public function testItemsCanBeMovedBeforeAndAfterOtherItems(): void
+    {
+        $workspace = $this->workspaceForMoves();
+
+        $response = $this->move('n.page-1', 'n.page-3', 'after', $workspace);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $result = self::json($response);
+        self::assertSame($workspace, $result['context']['workspace']);
+        // the levels down to the moved item
+        self::assertSame([null, 'n.site'], array_column($result['levels'], 'parentId'));
+        self::assertContains('n.page-1', array_column($result['levels'][1]['items'], 'id'));
+        self::assertSame('n.site', $result['previousParent']['id']);
+        self::assertSame(['not-found', 'page-2', 'page-3', 'page-1', 'page-4', 'page-5', 'blog', 'locked'], $this->siteChildren($workspace));
+        // live is not affected
+        self::assertSame(['not-found', 'page-1', 'page-2'], self::aggregateIds($this->levels(['workspace' => 'live', 'parent' => 'n.site', 'limit' => 3])[0]));
+
+        self::assertSame(200, $this->move('n.page-1', 'n.page-2', 'before', $workspace)->getStatusCode());
+        self::assertSame(['not-found', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5', 'blog', 'locked'], $this->siteChildren($workspace));
+    }
+
+    public function testItemsCanBeMovedIntoOtherItems(): void
+    {
+        $workspace = $this->workspaceForMoves();
+
+        $result = self::json($this->move('n.page-2-1', 'n.page-1', 'into', $workspace));
+        self::assertSame([null, 'n.site', 'n.page-1'], array_column($result['levels'], 'parentId'));
+        self::assertSame(['page-2-1'], self::aggregateIds($result['levels'][2]));
+        self::assertTrue($result['levels'][1]['items'][1]['hasChildren']);
+        // page-2 has no children anymore
+        self::assertSame('n.page-2', $result['previousParent']['id']);
+        self::assertFalse($result['previousParent']['hasChildren']);
+
+        // "into" appends to the children – also if the parent doesn't change
+        self::assertSame(200, $this->move('n.page-1', 'n.site', 'into', $workspace)->getStatusCode());
+        self::assertSame(['not-found', 'page-2', 'page-3', 'page-4', 'page-5', 'blog', 'locked', 'page-1'], $this->siteChildren($workspace));
+    }
+
+    public function testGroupedItemsCanBeMovedIntoTheirParent(): void
+    {
+        $result = self::json($this->move('n.post-c', 'n.blog', 'into', $this->workspaceForMoves()));
+
+        // down to the month of the posting
+        self::assertCount(5, $result['levels']);
+        self::assertSame(['post-c'], self::aggregateIds($result['levels'][4]));
+    }
+
+    /**
+     * @return iterable<array{string, string, string, int}>
+     */
+    public static function refusedMoves(): iterable
+    {
+        yield 'the site node' => ['n.site', 'n.page-1', 'into', 409];
+        yield 'a tethered node' => ['n.not-found', 'n.page-1', 'into', 409];
+        yield 'into itself' => ['n.page-1', 'n.page-1', 'into', 409];
+        yield 'into its own descendant' => ['n.page-2', 'n.page-2-1', 'into', 409];
+        yield 'next to the site node' => ['n.page-1', 'n.site', 'before', 409];
+        yield 'next to a grouped item' => ['n.post-a', 'n.post-b', 'before', 409];
+        yield 'into a disallowed parent' => ['n.page-1', 'n.post-a', 'into', 409];
+        yield 'a grouped item into a disallowed parent' => ['n.post-a', 'n.page-1', 'into', 409];
+        yield 'next to items of a disallowed parent' => ['n.post-a', 'n.page-2-1', 'after', 409];
+        yield 'a virtual item' => ['v.postingsByDate.eyJwIjoiYmxvZyIsInkiOjIwMjZ9', 'n.page-1', 'into', 409];
+        yield 'into a virtual item' => ['n.post-a', 'v.postingsByDate.eyJwIjoiYmxvZyIsInkiOjIwMjZ9', 'into', 409];
+        yield 'an item without edit permission' => ['n.locked-1', 'n.page-1', 'into', 403];
+        yield 'into an item without edit permission' => ['n.page-1', 'n.locked', 'into', 403];
+        yield 'next to an item whose parent has no edit permission' => ['n.page-1', 'n.locked-1', 'after', 403];
+        yield 'an unknown item' => ['n.unknown', 'n.page-1', 'into', 404];
+        yield 'into an unknown item' => ['n.page-1', 'n.unknown', 'into', 404];
+    }
+
+    #[DataProvider('refusedMoves')]
+    public function testRefusedMovesAreAnsweredWithProblemDocuments(string $itemId, string $targetId, string $position, int $expectedStatus): void
+    {
+        $workspace = $this->workspaceForMoves();
+        $siteChildren = $this->siteChildren($workspace);
+
+        $response = $this->move($itemId, $targetId, $position, $workspace);
+
+        self::assertProblem($response, $expectedStatus);
+        self::assertSame($siteChildren, $this->siteChildren($workspace));
+    }
+
+    public function testConflictsExplainWhyInTheLanguageOfTheUser(): void
+    {
+        self::assertSame('The item can\'t be moved there', self::json($this->move('n.page-1', 'n.post-a', 'into', $this->workspaceForMoves()))['detail']);
+    }
+
+    public function testMovesRequireWritePermissionForTheWorkspace(): void
+    {
+        self::assertProblem($this->move('n.page-1', 'n.page-2', 'into', 'readonly'), 403);
+    }
+
+    public function testMovesRequireAJsonRequestBody(): void
+    {
+        $body = json_encode(['target' => 'n.page-2', 'position' => 'into'], JSON_THROW_ON_ERROR);
+        self::assertProblem($this->request('/trees/documents/items/n.page-1/move', method: 'POST', body: $body, contentType: null), 400);
+        self::assertProblem($this->request('/trees/documents/items/n.page-1/move', method: 'POST', body: $body, contentType: 'text/plain'), 400);
+        self::assertProblem($this->request('/trees/documents/items/n.page-1/move', method: 'POST', body: '{"target":"n.page-2","position":"somewhere"}'), 400);
+    }
+
     private function createContent(): void
     {
         $contentRepositoryId = ContentRepositoryId::fromString(self::CONTENT_REPOSITORY);
@@ -553,6 +652,36 @@ final class NodeTreeApiTest extends FunctionalTestCase
         return $account;
     }
 
+    /**
+     * A new workspace based on live, that editors may change
+     */
+    private function workspaceForMoves(): string
+    {
+        $workspaceName = WorkspaceName::fromString('moves-' . substr(md5(uniqid('', true)), 0, 10));
+        $this->securityContext->withoutAuthorizationChecks(fn () => $this->objectManager->get(WorkspaceService::class)->createSharedWorkspace(
+            ContentRepositoryId::fromString(self::CONTENT_REPOSITORY),
+            $workspaceName,
+            WorkspaceTitle::fromString('Moves'),
+            WorkspaceDescription::createEmpty(),
+            WorkspaceName::forLive(),
+            WorkspaceRoleAssignments::create(WorkspaceRoleAssignment::createForGroup('Neos.Neos:AbstractEditor', WorkspaceRole::COLLABORATOR)),
+        ));
+        return $workspaceName->value;
+    }
+
+    private function move(string $itemId, string $targetId, string $position, string $workspace): ResponseInterface
+    {
+        return $this->request('/trees/documents/items/' . $itemId . '/move', ['workspace' => $workspace], method: 'POST', body: json_encode(['target' => $targetId, 'position' => $position], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function siteChildren(string $workspace): array
+    {
+        return self::aggregateIds($this->levels(['workspace' => $workspace, 'parent' => 'n.site'])[0]);
+    }
+
     private function contentRepository(): ContentRepository
     {
         return $this->objectManager->get(ContentRepositoryRegistry::class)->get(ContentRepositoryId::fromString(self::CONTENT_REPOSITORY));
@@ -580,7 +709,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
     /**
      * @param array<string, string|int> $queryParameters
      */
-    private function request(string $path, array $queryParameters = [], bool $authenticated = true, Account|null $account = null, string $host = 'localhost'): ResponseInterface
+    private function request(string $path, array $queryParameters = [], bool $authenticated = true, Account|null $account = null, string $host = 'localhost', string $method = 'GET', string|null $body = null, string|null $contentType = 'application/json'): ResponseInterface
     {
         // the authentication manager remembers whether it authenticated during the previous request
         $this->inject($this->objectManager->get(AuthenticationManagerInterface::class), 'isAuthenticated', null);
@@ -598,7 +727,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
             $testingProvider->setAuthenticationStatus(TokenInterface::AUTHENTICATION_SUCCESSFUL);
         }
         $this->securityContext->clearContext();
-        $request = new ServerRequest('GET', 'http://' . $host . '/neos/node-tree-api' . $path . ($queryParameters !== [] ? '?' . http_build_query($queryParameters) : ''));
+        $request = new ServerRequest($method, 'http://' . $host . '/neos/node-tree-api' . $path . ($queryParameters !== [] ? '?' . http_build_query($queryParameters) : ''), $body !== null && $contentType !== null ? ['Content-Type' => $contentType] : [], $body);
         return $this->browser->sendRequest($request->withQueryParams(array_map('strval', $queryParameters)));
     }
 

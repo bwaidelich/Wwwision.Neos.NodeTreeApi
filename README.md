@@ -29,6 +29,7 @@ browser that is logged in to Neos, open
 | `GET /trees` | The available trees: `[{id, label, icon}]` |
 | `GET /trees/{tree}/items` | Levels of a tree, see below |
 | `GET /trees/{tree}/items/{item}/drop-keys` | Where an item can be moved to, see [Drag and drop](#drag-and-drop) |
+| `POST /trees/{tree}/items/{item}/move` | Moves an item, see [Drag and drop](#drag-and-drop) |
 
 The site is detected from the domain of the request, like for the rest of Neos (a site with a matching domain, or else
 the first online site), and determines the content repository. All query parameters of `items` are optional:
@@ -156,10 +157,26 @@ that are loaded while dragging:
 
 The drop keys only depend on node types (a key is the node type of an item, or the type of its parent plus its name
 for tethered nodes), so the request costs the same for any size of the tree. Everything else is checked when the item
-is moved. Errors are
+is moved.
+
+`POST /trees/{tree}/items/{item}/move` with `{"target": "<item id>", "position": "into|before|after"}` moves the item –
+*into* appends it to the children of the target. It accepts `workspace`, `dimensions` and `limit` like `items`, and
+checks:
+
+- write permission for the workspace, edit permission for the node **and for its new parent**
+- the rules of the resolvers: the item is `draggable`, and the target is `sortable` for *before* and *after*
+- the node type constraints – and everything else the content repository checks, e.g. that a node isn't moved into
+  its own descendants
+
+The dimensions the move applies to are determined by the option `moveNodeStrategy` of the node type, like in the Neos
+UI (`gatherAll` if it's not set). The result is the same as for `items` with `expandTo` the moved item, plus the
+`previousParent` item (e.g. for its updated `hasChildren`): clients replace their levels of the same parents and
+remove the item from its previous level.
+
+Refused moves are answered with `409 Conflict` and a message for the user, missing permissions with `403`. Errors are
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem documents: `400` for invalid input (including malformed
-cursors), `401` without backend session, `403` if the workspace may not be read, `404` for unknown trees, sites or
-items.
+cursors), `401` without backend session, `403` if the workspace may not be read (or changed), `404` for unknown trees,
+sites or items, `409` for refused moves.
 
 ## Configuration
 
@@ -233,8 +250,10 @@ are requested.
 
 - **Authentication:** the backend session is made available to the API by a `ControllerObjectName` request pattern
   for the controller of the adapter (patterns of one provider are only OR-combined if they are of the same type). As
-  a consequence, the backend session is available to *all* APIs served by the adapter. There is no CSRF protection,
-  which is fine as long as the API is read-only.
+  a consequence, the backend session is available to *all* APIs served by the adapter.
+- **CSRF:** Flow's CSRF protection doesn't apply to the controller of the adapter. The only changing operation,
+  `move`, requires the content type `application/json`, which browsers only send cross-origin after a CORS preflight
+  – and the session cookie of Flow is `SameSite=Lax` by default.
 - **Read access** is enforced by the content repository: nodes the user may not read are not visible, and requesting
   a workspace without read permission results in a `403` – also for workspaces that don't exist.
 - **Context:** the only default that depends on the session is the workspace. Everything that was defaulted is part

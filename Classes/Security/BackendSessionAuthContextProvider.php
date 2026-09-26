@@ -20,7 +20,8 @@ use Psr\Http\Message\ServerRequestInterface;
  * Authenticates requests through the session of the Neos backend, i.e. the API can be used by the Neos UI (or the
  * Swagger UI) of a logged-in editor without further credentials
  *
- * There is no CSRF protection, which is fine as long as the API is read-only
+ * Flow's CSRF protection doesn't apply to the controller of the adapter. Operations that change content have to require
+ * a request body of the type "application/json", which browsers only send cross-origin after a CORS preflight
  */
 final readonly class BackendSessionAuthContextProvider implements AuthContextProviderWithSchemes
 {
