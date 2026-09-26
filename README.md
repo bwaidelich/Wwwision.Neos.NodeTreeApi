@@ -52,20 +52,25 @@ The result is a flat list of levels (JSON schemas can't be recursive):
           "id": "n.d87adae6-9e61-4dbc-b596-219abe1e45a2",
           "label": "Blog",
           "icon": "newspaper",
+          "tooltip": "Blog",
+          "appearance": ["muted", "strikethrough"],
+          "badges": [
+            {"icon": "eye-slash", "tooltip": "Hidden"},
+            {"icon": "low-vision", "tooltip": "Hidden in menus"}
+          ],
           "hasChildren": true,
           "node": {
             "aggregateId": "d87adae6-9e61-4dbc-b596-219abe1e45a2",
-            "nodeTypeName": "Neos.Demo:Document.Blog",
-            "isTethered": false,
-            "isDisabled": false,
-            "isHiddenInMenu": false,
-            "isFallback": false
+            "nodeTypeName": "Neos.Demo:Document.Blog"
           }
         },
         {
           "id": "v.blogPostingsByDate.eyJwIjoiZDg3YWRhZTYtOWU2MS00ZGJjLWI1OTYtMjE5YWJlMWU0NWEyIiwieSI6MjAyNX0",
           "label": "2025",
           "icon": "calendar-alt",
+          "tooltip": null,
+          "appearance": [],
+          "badges": [],
           "hasChildren": true,
           "node": null
         }
@@ -77,7 +82,38 @@ The result is a flat list of levels (JSON schemas can't be recursive):
 }
 ```
 
-Item ids and cursors are opaque to clients. Items with `node: null` are virtual. Errors are
+Item ids and cursors are opaque to clients. Items with `node: null` are virtual.
+
+### Rendering
+
+The server decides how items are rendered, the client only needs to know a small vocabulary:
+
+- `label`, `icon` (a Font Awesome icon name) and `tooltip` – all translated to the interface language of the user
+- `appearance`: any of `muted`, `strikethrough` and `italic` – the client decides how exactly they look
+- `badges`: small icons next to the label, each with a tooltip
+
+`node` only identifies the node an item represents (e.g. to open it when the item is selected), there are no flags
+like "hidden" or "hidden in menus" that clients have to interpret.
+
+Nodes are rendered by the `NodePresenter`. The default implementation renders them like the document tree of the Neos
+UI does:
+
+| Node | Appearance | Badge |
+| --- | --- | --- |
+| disabled itself | `muted`, `strikethrough` | `eye-slash` "Hidden" |
+| disabled by an ancestor | `muted` | |
+| hidden in menus | | `low-vision` "Hidden in menus" |
+| with a scheduled visibility | | `clock` "Visible from …", "Hidden from …" |
+| shown as fallback from other dimensions | `italic` | `language` "Not translated yet, shown from English (US)" |
+
+To change that, implement `Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter` and configure it in `Objects.yaml`:
+
+```yaml
+Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter:
+  className: 'Some\Package\CustomNodePresenter'
+```
+
+Virtual items are rendered by the resolver that creates them, see below. Errors are
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem documents: `400` for invalid input (including malformed
 cursors), `401` without backend session, `403` if the workspace may not be read, `404` for unknown trees, sites or
 items.
@@ -146,8 +182,9 @@ A custom resolver implements `Wwwision\Neos\NodeTreeApi\Resolver\ChildrenResolve
   between – for `expandTo`
 
 Everything else it needs (subgraph, tree, node types, locale, …) is part of the `ResolverContext`, which also creates
-the items: `nodeItem()` for nodes, `virtualItem()` for virtual items with a payload that is available as
-`$parent->id->payload()` when their children are requested.
+the items: `nodeItem()` for nodes (rendered by the `NodePresenter`), `virtualItem()` for virtual items – with label,
+icon, tooltip, appearance and badges, and a payload that is available as `$parent->id->payload()` when their children
+are requested.
 
 ## Design notes and limitations
 

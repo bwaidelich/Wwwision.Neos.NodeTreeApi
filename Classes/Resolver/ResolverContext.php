@@ -11,8 +11,10 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\Nodes;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Formatter\DatetimeFormatter;
 use Neos\Flow\I18n\Locale;
-use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
+use Wwwision\Neos\NodeTreeApi\Api\Model\Appearances;
+use Wwwision\Neos\NodeTreeApi\Api\Model\Badges;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
+use Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter;
 use Wwwision\Neos\NodeTreeApi\Tree\TreeDefinition;
 
 /**
@@ -29,18 +31,24 @@ final readonly class ResolverContext
         public NodeTypeManager $nodeTypeManager,
         // the interface language of the current user
         public Locale $locale,
-        private NodeLabelGeneratorInterface $nodeLabelGenerator,
+        private NodePresenter $nodePresenter,
         private DatetimeFormatter $datetimeFormatter,
     ) {
     }
 
+    /**
+     * An item that represents $node, rendered by the {@see NodePresenter}
+     */
     public function nodeItem(Node $node): Item
     {
-        $icon = $this->nodeTypeManager->getNodeType($node->nodeTypeName)?->getConfiguration('ui.icon');
+        $presentation = $this->nodePresenter->present($node);
         return new Item(
             id: ItemId::forNode($node->aggregateId),
-            label: $this->nodeLabelGenerator->getLabel($node),
-            icon: is_string($icon) ? $icon : null,
+            label: $presentation->label,
+            icon: $presentation->icon,
+            tooltip: $presentation->tooltip,
+            appearance: $presentation->appearance,
+            badges: $presentation->badges,
             node: $node,
         );
     }
@@ -69,12 +77,21 @@ final readonly class ResolverContext
      *
      * @param array<mixed> $payload
      */
-    public function virtualItem(array $payload, string $label, string|null $icon): Item
-    {
+    public function virtualItem(
+        array $payload,
+        string $label,
+        string|null $icon,
+        string|null $tooltip = null,
+        Appearances $appearance = new Appearances(),
+        Badges $badges = new Badges(),
+    ): Item {
         return new Item(
             id: ItemId::forVirtualItem($this->resolverKey, $payload),
             label: $label,
             icon: $icon,
+            tooltip: $tooltip,
+            appearance: $appearance,
+            badges: $badges,
             node: null,
         );
     }

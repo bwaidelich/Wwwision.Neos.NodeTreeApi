@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file original="" product-name="Wwwision.Neos.NodeTreeApi" source-language="en" datatype="plaintext">
+    <body>
+      <trans-unit id="badge.disabled" xml:space="preserve">
+        <source>Hidden</source>
+      </trans-unit>
+      <trans-unit id="badge.hiddenInMenu" xml:space="preserve">
+        <source>Hidden in menus</source>
+      </trans-unit>
+      <trans-unit id="badge.enableAfter" xml:space="preserve">
+        <source>Visible from {0}</source>
+      </trans-unit>
+      <trans-unit id="badge.disableAfter" xml:space="preserve">
+        <source>Hidden from {0}</source>
+      </trans-unit>
+      <trans-unit id="badge.fallback" xml:space="preserve">
+        <source>Not translated yet, shown from {0}</source>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

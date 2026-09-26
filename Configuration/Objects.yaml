@@ -22,3 +22,6 @@ Wwwision\Neos\NodeTreeApi\Security\BackendSessionAuthContextProvider:
       setting: 'Neos.Flow.session.name'
     4:
       setting: 'Wwwision.Neos.NodeTreeApi.authenticationProviders'
+
+Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter:
+  className: 'Wwwision\Neos\NodeTreeApi\Presentation\DefaultNodePresenter'

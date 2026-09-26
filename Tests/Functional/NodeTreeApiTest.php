@@ -45,7 +45,8 @@ use Psr\Http\Message\ResponseInterface;
  *
  * - site "Home" (node name "test-site")
  *   - not-found (tethered)
- *   - page-1 … page-5, page-3 is disabled, page-2 has a child page-2-1
+ *   - page-1 … page-5, page-2 has a child page-2-1, page-3 is disabled and has a child page-3-1, page-4 is
+ *     scheduled to be visible from 2030, page-5 is hidden in menus
  *   - blog, with the postings post-a (2026-09-10), post-b (2026-09-01), post-c (2026-03-05), post-d (2024-12-24)
  *     and the category "category"
  */
@@ -112,14 +113,13 @@ final class NodeTreeApiTest extends FunctionalTestCase
             'id' => 'n.site',
             'label' => 'Home',
             'icon' => 'globe',
+            'tooltip' => 'Homepage',
+            'appearance' => [],
+            'badges' => [],
             'hasChildren' => true,
             'node' => [
                 'aggregateId' => 'site',
                 'nodeTypeName' => 'Neos.Demo:Document.Homepage',
-                'isTethered' => false,
-                'isDisabled' => false,
-                'isHiddenInMenu' => false,
-                'isFallback' => false,
             ],
         ], $levels[0]['items'][0]);
         self::assertNull($levels[0]['previousCursor']);
@@ -133,9 +133,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertSame(['not-found', 'page-1', 'page-2', 'page-3'], self::aggregateIds($firstPage));
         self::assertNull($firstPage['previousCursor']);
         self::assertNotNull($firstPage['nextCursor']);
-        self::assertSame([false, false, true, false], array_column($firstPage['items'], 'hasChildren'));
-        self::assertSame([true, false, false, false], array_column(array_column($firstPage['items'], 'node'), 'isTethered'));
-        self::assertSame([false, false, false, true], array_column(array_column($firstPage['items'], 'node'), 'isDisabled'));
+        self::assertSame([false, false, true, true], array_column($firstPage['items'], 'hasChildren'));
 
         $secondPage = $this->levels(['parent' => 'n.site', 'limit' => 4, 'cursor' => $firstPage['nextCursor']])[0];
         self::assertSame(['page-4', 'page-5', 'blog'], self::aggregateIds($secondPage));
@@ -153,11 +151,40 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertSame(['not-found', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5'], self::aggregateIds(self::json($response)['levels'][0]));
     }
 
-    public function testFallbackNodesAreMarked(): void
+    public function testNodeStatesAreRenderedAsAppearanceAndBadges(): void
     {
-        $response = $this->request(self::ITEMS, ['site' => 'test-site', 'dimensions' => '{"language":"en_UK"}', 'parent' => 'n.site', 'limit' => 1]);
+        $items = array_column($this->levels(['parent' => 'n.site'])[0]['items'], null, 'id');
 
-        self::assertTrue(self::json($response)['levels'][0]['items'][0]['node']['isFallback']);
+        self::assertSame([], $items['n.page-1']['appearance']);
+        self::assertSame([], $items['n.page-1']['badges']);
+        self::assertSame('Page', $items['n.page-1']['tooltip']);
+
+        self::assertSame(['muted', 'strikethrough'], $items['n.page-3']['appearance']);
+        self::assertSame([['icon' => 'eye-slash', 'tooltip' => 'Hidden']], $items['n.page-3']['badges']);
+
+        self::assertSame([], $items['n.page-4']['appearance']);
+        self::assertSame(['clock'], array_column($items['n.page-4']['badges'], 'icon'));
+        self::assertStringStartsWith('Visible from ', $items['n.page-4']['badges'][0]['tooltip']);
+
+        self::assertSame([['icon' => 'low-vision', 'tooltip' => 'Hidden in menus']], $items['n.page-5']['badges']);
+    }
+
+    public function testDescendantsOfDisabledNodesAreMuted(): void
+    {
+        $item = $this->levels(['parent' => 'n.page-3'])[0]['items'][0];
+
+        self::assertSame('n.page-3-1', $item['id']);
+        self::assertSame(['muted'], $item['appearance']);
+        self::assertSame([], $item['badges']);
+    }
+
+    public function testFallbackNodesAreRenderedItalicWithBadge(): void
+    {
+        $response = $this->request(self::ITEMS, ['site' => 'test-site', 'dimensions' => '{"language":"en_UK"}', 'parent' => 'n.site', 'limit' => 2]);
+        $item = self::json($response)['levels'][0]['items'][1];
+
+        self::assertSame(['italic'], $item['appearance']);
+        self::assertSame([['icon' => 'language', 'tooltip' => 'Not translated yet, shown from English (US)']], $item['badges']);
     }
 
     public function testExpandToReturnsAllLevelsDownToTheItem(): void
@@ -189,6 +216,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
         $blogLevel = $this->levels(['parent' => 'n.blog'])[0];
         self::assertSame(['2026', '2024', 'Category'], array_column($blogLevel['items'], 'label'));
         self::assertNull($blogLevel['items'][0]['node']);
+        self::assertSame('calendar-alt', $blogLevel['items'][0]['icon']);
         self::assertSame([true, true, false], array_column($blogLevel['items'], 'hasChildren'));
 
         $monthLevel = $this->levels(['parent' => $blogLevel['items'][0]['id']])[0];
@@ -296,10 +324,13 @@ final class NodeTreeApiTest extends FunctionalTestCase
         $contentRepository = $this->contentRepository();
         $contentRepository->handle(CreateRootNodeAggregateWithNode::create(WorkspaceName::forLive(), NodeAggregateId::fromString('sites'), NodeTypeName::fromString('Neos.Neos:Sites')));
         $this->createNode('site', 'Neos.Demo:Document.Homepage', 'sites', ['title' => 'Home'], 'test-site', ['notfound' => 'not-found']);
-        foreach (range(1, 5) as $number) {
-            $this->createNode('page-' . $number, 'Neos.Demo:Document.Page', 'site', ['title' => 'Page ' . $number]);
-        }
+        $this->createNode('page-1', 'Neos.Demo:Document.Page', 'site', ['title' => 'Page 1']);
+        $this->createNode('page-2', 'Neos.Demo:Document.Page', 'site', ['title' => 'Page 2']);
+        $this->createNode('page-3', 'Neos.Demo:Document.Page', 'site', ['title' => 'Page 3']);
+        $this->createNode('page-4', 'Neos.Demo:Document.Page', 'site', ['title' => 'Page 4', 'enableAfterDateTime' => new \DateTimeImmutable('2030-01-01T10:00:00+00:00')]);
+        $this->createNode('page-5', 'Neos.Demo:Document.Page', 'site', ['title' => 'Page 5', 'hiddenInMenu' => true]);
         $this->createNode('page-2-1', 'Neos.Demo:Document.Page', 'page-2', ['title' => 'Page 2.1']);
+        $this->createNode('page-3-1', 'Neos.Demo:Document.Page', 'page-3', ['title' => 'Page 3.1']);
         $this->createNode('blog', 'Neos.Demo:Document.Blog', 'site', ['title' => 'Blog']);
         foreach (['post-a' => '2026-09-10', 'post-b' => '2026-09-01', 'post-c' => '2026-03-05', 'post-d' => '2024-12-24'] as $id => $date) {
             $this->createNode($id, 'Neos.Demo:Document.BlogPosting', 'blog', ['title' => 'Posting ' . $id, 'datePublished' => new \DateTimeImmutable($date . 'T10:00:00+02:00')]);

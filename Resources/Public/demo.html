@@ -50,10 +50,11 @@
         .toggle { width: 14px; text-align: center; color: var(--muted); flex: none; }
         .icon { width: 16px; text-align: center; flex: none; color: var(--muted); }
         .label { overflow: hidden; text-overflow: ellipsis; }
-        .virtual > .row .label { font-style: italic; }
         .virtual > .row .icon { color: var(--accent); }
-        .disabled > .row .label { opacity: .5; text-decoration: line-through; }
-        .fallback > .row .label { opacity: .6; }
+        /* the appearances the API assigns to items */
+        .row.muted .label, .row.muted .icon { opacity: .5; }
+        .row.strikethrough .label { text-decoration: line-through; }
+        .row.italic .label { font-style: italic; }
         .badge { font-size: 11px; color: var(--muted); }
         .more { padding: 2px 8px 2px 28px; color: var(--muted); font-size: 12px; }
         .more button { font-size: 12px; padding: 1px 6px; }
@@ -190,11 +191,13 @@
         const element = document.createElement('li');
         element.dataset.id = item.id;
         element.classList.toggle('virtual', item.node === null);
-        element.classList.toggle('disabled', item.node?.isDisabled === true);
-        element.classList.toggle('fallback', item.node?.isFallback === true);
 
         const row = document.createElement('div');
         row.className = 'row';
+        row.classList.add(...item.appearance);
+        if (item.tooltip) {
+            row.title = item.tooltip;
+        }
         const toggle = document.createElement('span');
         toggle.className = 'toggle';
         const icon = document.createElement('i');
@@ -203,10 +206,10 @@
         label.className = 'label';
         label.textContent = item.label;
         row.append(toggle, icon, label);
-        if (item.node?.isHiddenInMenu) {
+        for (const {icon, tooltip} of item.badges) {
             const badge = document.createElement('i');
-            badge.className = 'badge fa-solid fa-eye-slash';
-            badge.title = 'Hidden in menus';
+            badge.className = 'badge ' + iconClass(icon);
+            badge.title = tooltip;
             row.appendChild(badge);
         }
         element.appendChild(row);

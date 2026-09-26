@@ -9,20 +9,15 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * Information about the node a tree item represents
+ * The node a tree item represents, e.g. to open it when the item is selected
+ *
+ * How the node is rendered is part of the item itself (label, icon, appearance, badges, …)
  */
 final readonly class NodeInfo implements ProvidesSchema
 {
     public function __construct(
         public string $aggregateId,
         public string $nodeTypeName,
-        // whether the node is tethered to its parent, i.e. can't be moved or removed on its own
-        public bool $isTethered,
-        // whether the node itself is disabled (hidden) – not whether an ancestor is
-        public bool $isDisabled,
-        public bool $isHiddenInMenu,
-        // whether the node is shown in the requested dimensions as a fallback, i.e. is not translated yet
-        public bool $isFallback,
     ) {
     }
 

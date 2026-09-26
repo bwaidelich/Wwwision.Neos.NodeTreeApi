@@ -6,7 +6,6 @@ namespace Wwwision\Neos\NodeTreeApi\Tree;
 
 use Neos\ContentRepository\Core\ContentRepository;
 use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
-use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindAncestorNodesFilter;
@@ -19,9 +18,7 @@ use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\ContentRepositoryRegistry\Exception\ContentRepositoryNotFoundException;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Formatter\DatetimeFormatter;
-use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
-use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Level;
@@ -30,6 +27,7 @@ use Wwwision\Neos\NodeTreeApi\Api\Model\NodeInfo;
 use Wwwision\Neos\NodeTreeApi\Api\Model\TreeId;
 use Wwwision\Neos\NodeTreeApi\Api\Model\TreeItem;
 use Wwwision\Neos\NodeTreeApi\Api\Model\TreeItems;
+use Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter;
 use Wwwision\Neos\NodeTreeApi\Resolver\Item;
 use Wwwision\Neos\NodeTreeApi\Resolver\ParentItem;
 use Wwwision\Neos\NodeTreeApi\Resolver\ResolvedLevel;
@@ -46,7 +44,7 @@ final readonly class TreeLoader
         private TreeDefinitions $treeDefinitions,
         private ResolverRegistry $resolverRegistry,
         private ContentRepositoryRegistry $contentRepositoryRegistry,
-        private NodeLabelGeneratorInterface $nodeLabelGenerator,
+        private NodePresenter $nodePresenter,
         private LabelTranslator $labelTranslator,
         private DatetimeFormatter $datetimeFormatter,
     ) {
@@ -69,7 +67,7 @@ final readonly class TreeLoader
         $tree = $this->treeDefinitions->get($treeId) ?? throw new NotFound(sprintf('There is no tree "%s"', $treeId->value), 1790060601);
         $contentRepository = $this->contentRepository($contentRepositoryId);
         $subgraph = $this->subgraph($contentRepository, $workspaceName, $dimensionSpacePoint);
-        $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodeLabelGenerator, $this->labelTranslator->locale(), $this->datetimeFormatter);
+        $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodePresenter, $this->labelTranslator->locale(), $this->datetimeFormatter);
         $siteNode = $this->siteNode($subgraph, $siteNodeName);
 
         if ($expandTo !== null) {
@@ -220,7 +218,16 @@ final readonly class TreeLoader
             $levels[] = new Level(
                 parentId: $resolvedLevel->parentId,
                 items: new TreeItems(...array_map(
-                    static fn (Item $item) => new TreeItem($item->id, $item->label, $item->icon, $hasChildren[$item->id->value] ?? false, self::nodeInfo($item->node)),
+                    static fn (Item $item) => new TreeItem(
+                        id: $item->id,
+                        label: $item->label,
+                        icon: $item->icon,
+                        tooltip: $item->tooltip,
+                        appearance: $item->appearance,
+                        badges: $item->badges,
+                        hasChildren: $hasChildren[$item->id->value] ?? false,
+                        node: $item->node !== null ? new NodeInfo($item->node->aggregateId->value, $item->node->nodeTypeName->value) : null,
+                    ),
                     $resolvedLevel->items,
                 )),
                 previousCursor: $cursorResolverKey !== null && $resolvedLevel->previousCursor !== null ? Cursor::create($cursorResolverKey, $resolvedLevel->previousCursor) : null,
@@ -249,20 +256,5 @@ final readonly class TreeLoader
             $hasChildren = [...$hasChildren, ...$this->resolverRegistry->get((string)$resolverKey)->hasChildren($request->context((string)$resolverKey), $items)];
         }
         return $hasChildren;
-    }
-
-    private static function nodeInfo(Node|null $node): NodeInfo|null
-    {
-        if ($node === null) {
-            return null;
-        }
-        return new NodeInfo(
-            aggregateId: $node->aggregateId->value,
-            nodeTypeName: $node->nodeTypeName->value,
-            isTethered: $node->classification->isTethered(),
-            isDisabled: $node->tags->withoutInherited()->contain(NeosSubtreeTag::disabled()),
-            isHiddenInMenu: (bool)$node->getProperty('hiddenInMenu'),
-            isFallback: !$node->originDimensionSpacePoint->equals(OriginDimensionSpacePoint::fromDimensionSpacePoint($node->dimensionSpacePoint)),
-        );
     }
 }

@@ -9,9 +9,12 @@ Neos:
           language:
             values:
               'en_US':
+                label: 'English (US)'
                 specializations:
-                  'en_UK': []
-              'de': []
+                  'en_UK':
+                    label: 'English (UK)'
+              'de':
+                label: 'Deutsch'
 
 Wwwision:
   Neos:

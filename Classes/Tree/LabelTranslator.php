@@ -15,6 +15,8 @@ use Neos\Neos\Service\UserService;
 #[Flow\Scope('singleton')]
 final readonly class LabelTranslator
 {
+    private const string PACKAGE_KEY = 'Wwwision.Neos.NodeTreeApi';
+
     public function __construct(
         private Translator $translator,
         private UserService $userService,
@@ -28,18 +30,37 @@ final readonly class LabelTranslator
 
     /**
      * Translates a shorthand string like "Neos.Neos:Main:document" – anything else is returned as it is
+     *
+     * @param array<mixed> $arguments
      */
-    public function translate(string $label): string
+    public function translate(string $label, array $arguments = []): string
     {
         if (preg_match('/^([a-zA-Z0-9.]+):([a-zA-Z0-9.]+):([a-zA-Z0-9._-]+)$/', $label, $matches) !== 1) {
             return $label;
         }
         [, $packageKey, $sourceName, $id] = $matches;
+        return $this->translateById($id, $arguments, str_replace('.', '/', $sourceName), $packageKey) ?? $label;
+    }
+
+    /**
+     * Translates a label of this package (see Resources/Private/Translations/<language>/Main.xlf)
+     *
+     * @param array<mixed> $arguments
+     */
+    public function translateOwn(string $id, array $arguments = []): string
+    {
+        return $this->translateById($id, $arguments, 'Main', self::PACKAGE_KEY) ?? $id;
+    }
+
+    /**
+     * @param array<mixed> $arguments
+     */
+    private function translateById(string $id, array $arguments, string $sourceName, string $packageKey): string|null
+    {
         try {
-            $translated = $this->translator->translateById($id, [], null, $this->locale(), str_replace('.', '/', $sourceName), $packageKey);
+            return $this->translator->translateById($id, $arguments, null, $this->locale(), $sourceName, $packageKey);
         } catch (\Exception) {
-            return $label;
+            return null;
         }
-        return $translated ?? $label;
     }
 }

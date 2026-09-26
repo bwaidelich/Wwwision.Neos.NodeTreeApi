@@ -6,6 +6,8 @@ namespace Wwwision\Neos\NodeTreeApi\Resolver;
 
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\Flow\Annotations as Flow;
+use Wwwision\Neos\NodeTreeApi\Api\Model\Appearances;
+use Wwwision\Neos\NodeTreeApi\Api\Model\Badges;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
 
 /**
@@ -20,6 +22,9 @@ final readonly class Item
         public ItemId $id,
         public string $label,
         public string|null $icon,
+        public string|null $tooltip,
+        public Appearances $appearance,
+        public Badges $badges,
         // null for virtual items
         public Node|null $node,
     ) {

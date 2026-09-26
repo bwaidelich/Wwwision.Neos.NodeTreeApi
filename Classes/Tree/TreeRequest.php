@@ -10,7 +10,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Formatter\DatetimeFormatter;
 use Neos\Flow\I18n\Locale;
-use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
+use Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter;
 use Wwwision\Neos\NodeTreeApi\Resolver\ChildrenResolver;
 use Wwwision\Neos\NodeTreeApi\Resolver\ParentItem;
 use Wwwision\Neos\NodeTreeApi\Resolver\ResolverContext;
@@ -26,7 +26,7 @@ final readonly class TreeRequest
         public ContentSubgraphInterface $subgraph,
         private NodeTypeManager $nodeTypeManager,
         private ResolverRegistry $resolverRegistry,
-        private NodeLabelGeneratorInterface $nodeLabelGenerator,
+        private NodePresenter $nodePresenter,
         private Locale $locale,
         private DatetimeFormatter $datetimeFormatter,
     ) {
@@ -34,7 +34,7 @@ final readonly class TreeRequest
 
     public function context(string $resolverKey): ResolverContext
     {
-        return new ResolverContext($resolverKey, $this->tree, $this->subgraph, $this->nodeTypeManager, $this->locale, $this->nodeLabelGenerator, $this->datetimeFormatter);
+        return new ResolverContext($resolverKey, $this->tree, $this->subgraph, $this->nodeTypeManager, $this->locale, $this->nodePresenter, $this->datetimeFormatter);
     }
 
     /**

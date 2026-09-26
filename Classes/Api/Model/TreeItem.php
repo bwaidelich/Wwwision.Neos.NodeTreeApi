@@ -10,6 +10,8 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
  * An entry of a tree: either a node, or a virtual item that groups nodes (e.g. by month)
+ *
+ * Everything a client needs to render it is decided by the server: label, icon, tooltip, appearance and badges
  */
 final readonly class TreeItem implements ProvidesSchema
 {
@@ -17,6 +19,10 @@ final readonly class TreeItem implements ProvidesSchema
         public ItemId $id,
         public string $label,
         public string|null $icon,
+        // translated to the interface language of the current user
+        public string|null $tooltip,
+        public Appearances $appearance,
+        public Badges $badges,
         // whether the item can be expanded, i.e. whether requesting its children returns any
         public bool $hasChildren,
         // the node this item represents, null for virtual items
