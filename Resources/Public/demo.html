@@ -63,6 +63,13 @@
         #details h2 { font-size: 14px; margin: 0 0 8px; }
         pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
         #log { margin-top: 16px; font-size: 12px; color: var(--muted); }
+        /* drag and drop */
+        .row[draggable="true"] { cursor: grab; }
+        .row.dragging { opacity: .4; }
+        .row.drop-into { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+        .row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+        #message { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 8px 14px; border-radius: 4px; background: var(--danger); color: #fff; }
     </style>
 </head>
 <body>
@@ -86,6 +93,7 @@
         <div id="log"></div>
     </div>
 </main>
+<div id="message" hidden></div>
 <script>
     const apiBase = new URL('/neos/node-tree-api/', window.location.href);
     const $ = (id) => document.getElementById(id);
@@ -102,7 +110,7 @@
 
     let requestCount = 0;
 
-    async function api(path, params = {}) {
+    async function api(path, params = {}, {method = 'GET', body = null} = {}) {
         const url = new URL(path, apiBase);
         for (const [key, value] of Object.entries(params)) {
             if (value !== null && value !== undefined && value !== '') {
@@ -110,23 +118,36 @@
             }
         }
         const started = performance.now();
-        const response = await fetch(url, {credentials: 'same-origin', headers: {Accept: 'application/json'}});
-        const body = await response.json();
-        $('log').textContent = `Request #${++requestCount}: ${decodeURIComponent(url.pathname + url.search)} → ${response.status} in ${Math.round(performance.now() - started)} ms`;
-        if (!response.ok) {
-            throw new Error(`${body.status} ${body.title}: ${body.detail ?? ''}${body.issues ? '\n' + JSON.stringify(body.issues, null, 2) : ''}`);
+        const headers = {Accept: 'application/json'};
+        if (body !== null) {
+            headers['Content-Type'] = 'application/json';
         }
-        return body;
+        const response = await fetch(url, {method, credentials: 'same-origin', headers, body: body !== null ? JSON.stringify(body) : null});
+        const responseBody = await response.json();
+        $('log').textContent = `Request #${++requestCount}: ${method} ${decodeURIComponent(url.pathname + url.search)} → ${response.status} in ${Math.round(performance.now() - started)} ms`;
+        if (!response.ok) {
+            const error = new Error(`${responseBody.status} ${responseBody.title}: ${responseBody.detail ?? ''}${responseBody.issues?.length ? '\n' + JSON.stringify(responseBody.issues, null, 2) : ''}`);
+            error.detail = responseBody.detail;
+            throw error;
+        }
+        return responseBody;
+    }
+
+    // the workspace and dimensions of all requests after the first one
+    function contextParams() {
+        const s = settings();
+        return {
+            workspace: context?.workspace ?? s.workspace,
+            dimensions: context ? JSON.stringify(context.dimensions) : s.dimensions,
+        };
+    }
+
+    function treePath(suffix) {
+        return `trees/${encodeURIComponent(settings().tree)}/${suffix}`;
     }
 
     function listItems(extraParams) {
-        const s = settings();
-        return api(`trees/${encodeURIComponent(s.tree)}/items`, {
-            workspace: context?.workspace ?? s.workspace,
-            dimensions: context ? JSON.stringify(context.dimensions) : s.dimensions,
-            limit: s.limit,
-            ...extraParams,
-        });
+        return api(treePath('items'), {...contextParams(), limit: settings().limit, ...extraParams});
     }
 
     function iconClass(icon) {
@@ -137,6 +158,14 @@
             return icon;
         }
         return 'fa-solid fa-' + icon.replace(/^icon-/, '');
+    }
+
+    function showMessage(text) {
+        const message = $('message');
+        message.textContent = text;
+        message.hidden = false;
+        clearTimeout(showMessage.timeout);
+        showMessage.timeout = setTimeout(() => message.hidden = true, 5000);
     }
 
     // Renders (a page of) a level into the <ul> of its parent (or the root). A page that is appended brings the
@@ -189,17 +218,30 @@
         }
     }
 
+    // An item is an <li> with its data in "item", its row, and a <ul> with its children once they are loaded
     function renderItem(item, levelsByParentId) {
         const element = document.createElement('li');
         element.dataset.id = item.id;
         element.classList.toggle('virtual', item.node === null);
+        element.appendChild(document.createElement('div'));
+        renderRow(element, item);
 
+        // levels that came along with "expandTo"
+        const level = levelsByParentId[item.id];
+        if (level) {
+            renderLevel(element, level, levelsByParentId);
+            setExpanded(element, true);
+        }
+        return element;
+    }
+
+    function renderRow(element, item) {
+        element.item = item;
         const row = document.createElement('div');
         row.className = 'row';
         row.classList.add(...item.appearance);
-        if (item.tooltip) {
-            row.title = item.tooltip;
-        }
+        row.title = item.tooltip ?? '';
+        row.draggable = item.draggable;
         const toggle = document.createElement('span');
         toggle.className = 'toggle';
         const icon = document.createElement('i');
@@ -214,47 +256,199 @@
             badge.title = tooltip;
             row.appendChild(badge);
         }
-        element.appendChild(row);
-
-        let expanded = false;
-        let loaded = false;
-        const setExpanded = (value) => {
-            expanded = value;
-            toggle.innerHTML = item.hasChildren ? `<i class="fa-solid fa-caret-${expanded ? 'down' : 'right'}"></i>` : '';
-            const children = element.querySelector(':scope > ul');
-            if (children) {
-                children.hidden = !expanded;
-            }
-        };
-        toggle.onclick = async (event) => {
+        toggle.onclick = (event) => {
             event.stopPropagation();
-            if (!item.hasChildren) {
-                return;
+            if (isExpanded(element)) {
+                setExpanded(element, false);
+            } else {
+                expand(element);
             }
-            if (!loaded) {
-                loaded = true;
-                setExpanded(true);
-                await loadPage(element, item.id, null, false);
-                return;
-            }
-            setExpanded(!expanded);
         };
-        row.onclick = () => {
-            document.querySelectorAll('.row.selected').forEach((selected) => selected.classList.remove('selected'));
-            row.classList.add('selected');
-            $('selected').textContent = JSON.stringify(item, null, 2);
-        };
+        row.onclick = () => select(element);
+        row.ondragstart = (event) => dragStart(event, element);
+        row.ondragend = dragEnd;
+        row.ondragover = (event) => dragOver(event, element);
+        row.ondragleave = () => row.classList.remove('drop-into', 'drop-before', 'drop-after');
+        row.ondrop = (event) => drop(event, element);
+        element.querySelector(':scope > .row, :scope > div').replaceWith(row);
+        setExpanded(element, isExpanded(element));
+    }
 
-        // levels that came along with "expandTo"
-        const level = levelsByParentId[item.id];
-        if (level) {
-            loaded = true;
-            renderLevel(element, level, levelsByParentId);
-            setExpanded(true);
-        } else {
-            setExpanded(false);
+    function isExpanded(element) {
+        const children = element.querySelector(':scope > ul');
+        return children !== null && !children.hidden;
+    }
+
+    function setExpanded(element, expanded) {
+        const children = element.querySelector(':scope > ul');
+        if (children) {
+            children.hidden = !expanded;
         }
-        return element;
+        element.querySelector(':scope > .row > .toggle').innerHTML = element.item.hasChildren ? `<i class="fa-solid fa-caret-${expanded ? 'down' : 'right'}"></i>` : '';
+    }
+
+    async function expand(element) {
+        if (!element.item.hasChildren) {
+            return;
+        }
+        const loaded = element.querySelector(':scope > ul') !== null;
+        if (!loaded) {
+            element.appendChild(document.createElement('ul'));
+        }
+        setExpanded(element, true);
+        if (!loaded) {
+            await loadPage(element, element.item.id, null, false);
+        }
+    }
+
+    function select(element) {
+        document.querySelectorAll('.row.selected').forEach((selected) => selected.classList.remove('selected'));
+        element.querySelector(':scope > .row').classList.add('selected');
+        $('selected').textContent = JSON.stringify(element.item, null, 2);
+    }
+
+    // the item of the level an item is part of – null for the root level
+    function levelParentOf(element) {
+        const parent = element.parentElement.parentElement;
+        return parent.item ? parent : null;
+    }
+
+    function findItem(id) {
+        return $('tree').querySelector(`li[data-id="${CSS.escape(id)}"]`);
+    }
+
+    /*
+     * Drag and drop: when dragging starts, the drop keys of the dragged item are requested – after that, every drop
+     * target is decided locally, without further requests
+     */
+    let dragged = null;
+
+    function dragStart(event, element) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', element.item.label);
+        element.querySelector(':scope > .row').classList.add('dragging');
+        dragged = {element, dropKeys: null, hovered: null, expandTimeout: null};
+        const current = dragged;
+        api(treePath(`items/${encodeURIComponent(element.item.id)}/drop-keys`), contextParams())
+            .then((result) => current.dropKeys = new Set(result.dropKeys))
+            .catch((error) => showMessage(error.message));
+    }
+
+    function dragEnd() {
+        if (dragged) {
+            clearTimeout(dragged.expandTimeout);
+            dragged.element.querySelector(':scope > .row')?.classList.remove('dragging');
+        }
+        document.querySelectorAll('.drop-into, .drop-before, .drop-after').forEach((row) => row.classList.remove('drop-into', 'drop-before', 'drop-after'));
+        dragged = null;
+    }
+
+    // "before" in the upper quarter of a row, "after" in the lower quarter, "into" in between
+    function positionAt(event, row) {
+        const {top, height} = row.getBoundingClientRect();
+        const offset = (event.clientY - top) / height;
+        return offset < .25 ? 'before' : offset > .75 ? 'after' : 'into';
+    }
+
+    function accepts(target, position) {
+        if (!dragged?.dropKeys || dragged.element.contains(target)) {
+            // not loaded yet, or the dragged item itself or one of its descendants
+            return false;
+        }
+        if (position === 'into') {
+            return dragged.dropKeys.has(target.item.dropKey);
+        }
+        const levelParent = levelParentOf(target);
+        return target.item.sortable && levelParent !== null && dragged.dropKeys.has(levelParent.item.dropKey);
+    }
+
+    function dragOver(event, element) {
+        if (!dragged) {
+            return;
+        }
+        const row = element.querySelector(':scope > .row');
+        if (dragged.hovered !== element) {
+            // expand collapsed items after hovering them for a moment
+            clearTimeout(dragged.expandTimeout);
+            dragged.hovered = element;
+            if (element.item.hasChildren && !isExpanded(element)) {
+                dragged.expandTimeout = setTimeout(() => expand(element), 700);
+            }
+        }
+        const position = positionAt(event, row);
+        row.classList.remove('drop-into', 'drop-before', 'drop-after');
+        if (accepts(element, position)) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            row.classList.add('drop-' + position);
+        }
+    }
+
+    async function drop(event, target) {
+        event.preventDefault();
+        const position = positionAt(event, target.querySelector(':scope > .row'));
+        const accepted = accepts(target, position);
+        const element = dragged?.element;
+        dragEnd();
+        if (!accepted || !element) {
+            return;
+        }
+        try {
+            const result = await api(
+                treePath(`items/${encodeURIComponent(element.item.id)}/move`),
+                {...contextParams(), limit: settings().limit},
+                {method: 'POST', body: {target: target.item.id, position}},
+            );
+            removeItem(element);
+            if (result.previousParent) {
+                const previousParent = findItem(result.previousParent.id);
+                if (previousParent) {
+                    renderRow(previousParent, result.previousParent);
+                }
+            }
+            mergeLevels(result.levels, element.item.id);
+        } catch (error) {
+            showMessage(error.detail ?? error.message);
+        }
+    }
+
+    // removes an item from its level – if that is empty then, its parent has no children anymore
+    function removeItem(element) {
+        const list = element.parentElement;
+        element.remove();
+        if (list.querySelector(':scope > li[data-id]') === null && list.parentElement.item) {
+            const parent = list.parentElement;
+            list.remove();
+            renderRow(parent, {...parent.item, hasChildren: false});
+        }
+    }
+
+    // Merges the levels down to a moved item: the level that contains it is replaced, as well as levels above it that
+    // don't contain the next one (e.g. new virtual items). Levels that already contain the next one are kept – with
+    // the pages that were loaded before
+    function mergeLevels(levels, movedItemId) {
+        for (let i = 1; i < levels.length; i++) {
+            const container = findItem(levels[i].parentId);
+            if (!container) {
+                // the parent is on a page that is not loaded – start over
+                $('expandTo').value = movedItemId;
+                load();
+                return;
+            }
+            const list = container.querySelector(':scope > ul');
+            const next = levels[i + 1];
+            if (!list || !next || !list.querySelector(`:scope > li[data-id="${CSS.escape(next.parentId)}"]`)) {
+                list?.remove();
+                renderLevel(container, levels[i], {});
+            }
+            renderRow(container, {...container.item, hasChildren: true});
+            setExpanded(container, true);
+        }
+        const moved = findItem(movedItemId);
+        if (moved) {
+            select(moved);
+            moved.scrollIntoView({block: 'nearest'});
+        }
     }
 
     function showError(container, error) {
@@ -276,9 +470,11 @@
             const levelsByParentId = Object.fromEntries(result.levels.filter((level) => level.parentId !== null).map((level) => [level.parentId, level]));
             renderLevel(tree, result.levels[0], levelsByParentId);
             if (expandTo) {
-                const target = tree.querySelector(`li[data-id="${CSS.escape(expandTo)}"] > .row`);
-                target?.click();
-                target?.scrollIntoView({block: 'center'});
+                const target = findItem(expandTo);
+                if (target) {
+                    select(target);
+                    target.scrollIntoView({block: 'center'});
+                }
             }
         } catch (error) {
             showError(tree, error);

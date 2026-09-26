@@ -20,7 +20,8 @@ The API is served under `/neos/node-tree-api` and authenticated through the sess
 browser that is logged in to Neos, open
 
 - `/neos/node-tree-api/docs` for the Swagger UI, or
-- `/_Resources/Static/Packages/Wwwision.Neos.NodeTreeApi/demo.html` for a demo client
+- `/_Resources/Static/Packages/Wwwision.Neos.NodeTreeApi/demo.html` for a demo client – with drag and drop, which
+  moves nodes in the selected workspace
 
 ### Operations
 
