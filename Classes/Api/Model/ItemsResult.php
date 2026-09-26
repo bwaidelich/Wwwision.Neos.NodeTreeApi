@@ -17,6 +17,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class ItemsResult implements ProvidesSchema
 {
     public function __construct(
+        public ItemsContext $context,
         public Levels $levels,
     ) {
     }

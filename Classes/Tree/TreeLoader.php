@@ -10,17 +10,21 @@ use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindAncestorNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
-use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
-use Neos\ContentRepository\Core\SharedModel\Node\NodeName;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
-use Neos\ContentRepositoryRegistry\Exception\ContentRepositoryNotFoundException;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Formatter\DatetimeFormatter;
+use Neos\Neos\Domain\Model\SiteNodeName;
+use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
+use Neos\Neos\Domain\Service\UserService;
+use Neos\Neos\Domain\Service\WorkspaceService;
+use Neos\Neos\FrontendRouting\SiteDetection\SiteDetectionResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Cursor;
 use Wwwision\Neos\NodeTreeApi\Api\Model\ItemId;
+use Wwwision\Neos\NodeTreeApi\Api\Model\ItemsContext;
+use Wwwision\Neos\NodeTreeApi\Api\Model\ItemsResult;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Level;
 use Wwwision\Neos\NodeTreeApi\Api\Model\Levels;
 use Wwwision\Neos\NodeTreeApi\Api\Model\NodeInfo;
@@ -44,6 +48,9 @@ final readonly class TreeLoader
         private TreeDefinitions $treeDefinitions,
         private ResolverRegistry $resolverRegistry,
         private ContentRepositoryRegistry $contentRepositoryRegistry,
+        private SiteRepository $siteRepository,
+        private UserService $userService,
+        private WorkspaceService $workspaceService,
         private NodePresenter $nodePresenter,
         private LabelTranslator $labelTranslator,
         private DatetimeFormatter $datetimeFormatter,
@@ -54,59 +61,71 @@ final readonly class TreeLoader
      * @throws InvalidRequest | NotFound | Forbidden
      */
     public function load(
-        string $contentRepositoryId,
-        string $workspaceName,
         TreeId $treeId,
-        string $siteNodeName,
-        string $dimensionSpacePoint,
+        SiteDetectionResult $detectedSite,
+        string|null $workspaceName,
+        string|null $dimensionSpacePoint,
         ItemId|null $parentId,
         Cursor|null $cursor,
         int $limit,
         ItemId|null $expandTo = null,
-    ): Levels {
+    ): ItemsResult {
         $tree = $this->treeDefinitions->get($treeId) ?? throw new NotFound(sprintf('There is no tree "%s"', $treeId->value), 1790060601);
-        $contentRepository = $this->contentRepository($contentRepositoryId);
-        $subgraph = $this->subgraph($contentRepository, $workspaceName, $dimensionSpacePoint);
-        $request = new TreeRequest($tree, $subgraph, $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodePresenter, $this->labelTranslator->locale(), $this->datetimeFormatter);
-        $siteNode = $this->siteNode($subgraph, $siteNodeName);
+        $site = $this->siteRepository->findOneByNodeName($detectedSite->siteNodeName) ?? throw new NotFound(sprintf('There is no site "%s"', $detectedSite->siteNodeName->value), 1790060612);
+        $contentRepository = $this->contentRepositoryRegistry->get($detectedSite->contentRepositoryId);
+        $workspace = $workspaceName !== null ? self::workspaceName($workspaceName) : $this->defaultWorkspaceName($contentRepository);
+        $dimensions = $dimensionSpacePoint !== null ? self::dimensionSpacePoint($dimensionSpacePoint) : $site->getConfiguration()->defaultDimensionSpacePoint;
+        $subgraph = $this->subgraph($contentRepository, $workspace, $dimensions);
+        $context = new ItemsContext($detectedSite->siteNodeName->value, $contentRepository->id->value, $workspace->value, $dimensions->coordinates);
+        $request = new TreeRequest($tree, $subgraph, $context->hash(), $contentRepository->getNodeTypeManager(), $this->resolverRegistry, $this->nodePresenter, $this->labelTranslator->locale(), $this->datetimeFormatter);
+        $siteNode = $this->siteNode($subgraph, $detectedSite->siteNodeName);
 
+        if ($cursor !== null && $cursor->contextHash() !== $request->contextHash) {
+            throw new InvalidRequest('The cursor belongs to another site, workspace or dimensions', 1790060617);
+        }
         if ($expandTo !== null) {
             if ($parentId !== null || $cursor !== null) {
                 throw new InvalidRequest('"expandTo" can\'t be combined with "parent" or "cursor"', 1790060614);
             }
-            return $this->render($request, ...$this->expandTo($request, $siteNode, $expandTo, $limit));
+            return new ItemsResult($context, $this->render($request, ...$this->expandTo($request, $siteNode, $expandTo, $limit)));
         }
         if ($parentId === null) {
             if ($cursor !== null) {
                 throw new InvalidRequest('The root level has only one page, a "cursor" requires a "parent"', 1790060602);
             }
-            return $this->render($request, [null, $this->rootLevel($request, $siteNode)]);
+            return new ItemsResult($context, $this->render($request, [null, $this->rootLevel($request, $siteNode)]));
         }
         $parent = $this->parentItem($request, $parentId);
         [$resolverKey, $resolver] = $request->resolverFor($parent);
         if ($cursor !== null && $cursor->resolverKey() !== $resolverKey) {
             throw new InvalidRequest('The cursor does not belong to the children of this parent', 1790060603);
         }
-        return $this->render($request, [$resolverKey, $resolver->resolve($request->context($resolverKey), $parent, $cursor?->payload(), $limit)]);
+        return new ItemsResult($context, $this->render($request, [$resolverKey, $resolver->resolve($request->context($resolverKey), $parent, $cursor?->payload(), $limit)]));
     }
 
-    private function contentRepository(string $contentRepositoryId): ContentRepository
+    /**
+     * The personal workspace of the current user – or "live" if there is none
+     */
+    private function defaultWorkspaceName(ContentRepository $contentRepository): WorkspaceName
     {
-        try {
-            $id = ContentRepositoryId::fromString($contentRepositoryId);
-        } catch (\InvalidArgumentException) {
-            throw new InvalidRequest(sprintf('"%s" is no valid content repository id', $contentRepositoryId), 1790060604);
+        $user = $this->userService->getCurrentUser();
+        if ($user === null) {
+            return WorkspaceName::forLive();
         }
         try {
-            return $this->contentRepositoryRegistry->get($id);
-        } catch (ContentRepositoryNotFoundException) {
-            throw new NotFound(sprintf('There is no content repository "%s"', $id->value), 1790060605);
+            return $this->workspaceService->getPersonalWorkspaceForUser($contentRepository->id, $user->getId())->workspaceName;
+        } catch (\RuntimeException) {
+            return WorkspaceName::forLive();
         }
     }
 
-    private function subgraph(ContentRepository $contentRepository, string $workspaceName, string $dimensionSpacePoint): ContentSubgraphInterface
+    private static function workspaceName(string $workspaceName): WorkspaceName
     {
-        $workspace = WorkspaceName::tryFromString($workspaceName) ?? throw new InvalidRequest(sprintf('"%s" is no valid workspace name', $workspaceName), 1790060606);
+        return WorkspaceName::tryFromString($workspaceName) ?? throw new InvalidRequest(sprintf('"%s" is no valid workspace name', $workspaceName), 1790060606);
+    }
+
+    private static function dimensionSpacePoint(string $dimensionSpacePoint): DimensionSpacePoint
+    {
         $invalidDimensions = new InvalidRequest('"dimensions" has to be a JSON object with the dimension values, e.g. {"language":"en_US"}', 1790060607);
         try {
             $dimensionValues = json_decode($dimensionSpacePoint, true, 2, JSON_THROW_ON_ERROR);
@@ -117,10 +136,14 @@ final readonly class TreeLoader
             throw $invalidDimensions;
         }
         try {
-            $dimensions = DimensionSpacePoint::fromArray($dimensionValues);
+            return DimensionSpacePoint::fromArray($dimensionValues);
         } catch (\InvalidArgumentException) {
             throw $invalidDimensions;
         }
+    }
+
+    private function subgraph(ContentRepository $contentRepository, WorkspaceName $workspace, DimensionSpacePoint $dimensions): ContentSubgraphInterface
+    {
         if (!$contentRepository->getVariationGraph()->getDimensionSpacePoints()->contains($dimensions)) {
             throw new InvalidRequest(sprintf('The dimensions %s are not configured in content repository "%s"', $dimensions->toJson(), $contentRepository->id->value), 1790060608);
         }
@@ -133,16 +156,11 @@ final readonly class TreeLoader
         }
     }
 
-    private function siteNode(ContentSubgraphInterface $subgraph, string $siteNodeName): Node
+    private function siteNode(ContentSubgraphInterface $subgraph, SiteNodeName $siteNodeName): Node
     {
-        try {
-            $name = NodeName::fromString($siteNodeName);
-        } catch (\InvalidArgumentException) {
-            throw new InvalidRequest(sprintf('"%s" is no valid site node name', $siteNodeName), 1790060611);
-        }
         $sitesNode = $subgraph->findRootNodeByType(NodeTypeNameFactory::forSites());
-        $siteNode = $sitesNode !== null ? $subgraph->findNodeByPath($name, $sitesNode->aggregateId) : null;
-        return $siteNode ?? throw new NotFound(sprintf('There is no site "%s"', $name->value), 1790060612);
+        $siteNode = $sitesNode !== null ? $subgraph->findNodeByPath($siteNodeName->toNodeName(), $sitesNode->aggregateId) : null;
+        return $siteNode ?? throw new NotFound(sprintf('There is no site node "%s"', $siteNodeName->value), 1790060611);
     }
 
     private function rootLevel(TreeRequest $request, Node $siteNode): ResolvedLevel
@@ -230,8 +248,8 @@ final readonly class TreeLoader
                     ),
                     $resolvedLevel->items,
                 )),
-                previousCursor: $cursorResolverKey !== null && $resolvedLevel->previousCursor !== null ? Cursor::create($cursorResolverKey, $resolvedLevel->previousCursor) : null,
-                nextCursor: $cursorResolverKey !== null && $resolvedLevel->nextCursor !== null ? Cursor::create($cursorResolverKey, $resolvedLevel->nextCursor) : null,
+                previousCursor: $cursorResolverKey !== null && $resolvedLevel->previousCursor !== null ? Cursor::create($cursorResolverKey, $request->contextHash, $resolvedLevel->previousCursor) : null,
+                nextCursor: $cursorResolverKey !== null && $resolvedLevel->nextCursor !== null ? Cursor::create($cursorResolverKey, $request->contextHash, $resolvedLevel->nextCursor) : null,
             );
         }
         return new Levels(...$levels);

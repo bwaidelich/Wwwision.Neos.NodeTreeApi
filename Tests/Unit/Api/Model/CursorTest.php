@@ -13,9 +13,10 @@ final class CursorTest extends TestCase
 {
     public function testCursorsContainResolverKeyAndPayload(): void
     {
-        $cursor = Cursor::fromString(Cursor::create('default', ['after' => 'some-node'])->value);
+        $cursor = Cursor::fromString(Cursor::create('default', 'abc123', ['after' => 'some-node'])->value);
 
         self::assertSame('default', $cursor->resolverKey());
+        self::assertSame('abc123', $cursor->contextHash());
         self::assertSame(['after' => 'some-node'], $cursor->payload());
         self::assertMatchesRegularExpression('/^[A-Za-z0-9_-]+$/', $cursor->value);
     }
@@ -28,8 +29,10 @@ final class CursorTest extends TestCase
         yield 'no base64' => ['abc'];
         // {"p":{}}
         yield 'no resolver key' => ['eyJwIjp7fX0'];
-        // {"r":"default","p":"x"}
-        yield 'payload is no object' => ['eyJyIjoiZGVmYXVsdCIsInAiOiJ4In0'];
+        // {"r":"default","p":{}}
+        yield 'no context hash' => ['eyJyIjoiZGVmYXVsdCIsInAiOnt9fQ'];
+        // {"r":"default","c":"x","p":"x"}
+        yield 'payload is no object' => ['eyJyIjoiZGVmYXVsdCIsImMiOiJ4IiwicCI6IngifQ'];
     }
 
     #[DataProvider('malformedCursors')]

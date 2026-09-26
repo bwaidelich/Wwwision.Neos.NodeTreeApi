@@ -1,6 +1,20 @@
-# The functional tests work on a content repository of their own, with trees that don't depend on the presets of the
-# distribution
+# The functional tests work on a site and content repository of their own, with trees that don't depend on the presets
+# of the distribution
 Neos:
+  Neos:
+    sites:
+      'test-site':
+        preset: 'default'
+        contentRepository: 'nodetreetest'
+        contentDimensions:
+          defaultDimensionSpacePoint:
+            language: 'en_US'
+      'other-site':
+        preset: 'default'
+        contentRepository: 'nodetreetest'
+        contentDimensions:
+          defaultDimensionSpacePoint:
+            language: 'en_US'
   ContentRepositoryRegistry:
     contentRepositories:
       'nodetreetest':

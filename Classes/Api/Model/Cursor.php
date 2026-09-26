@@ -13,7 +13,8 @@ use Wwwision\Neos\NodeTreeApi\Tree\InvalidRequest;
 /**
  * Points to the previous or next page of a level – opaque to clients
  *
- * Internally, it is the base64url encoded JSON {"r": <resolver key>, "p": <payload of that resolver>}
+ * Internally, it is the base64url encoded JSON {"r": <resolver key>, "c": <context hash>, "p": <payload of that
+ * resolver>} – the context hash binds it to the site, workspace and dimensions it was created for
  */
 final readonly class Cursor implements ProvidesSchema
 {
@@ -30,9 +31,9 @@ final readonly class Cursor implements ProvidesSchema
     /**
      * @param array<mixed> $payload
      */
-    public static function create(string $resolverKey, array $payload): self
+    public static function create(string $resolverKey, string $contextHash, array $payload): self
     {
-        return self::fromString(Base64Url::encodeJson(['r' => $resolverKey, 'p' => $payload]));
+        return self::fromString(Base64Url::encodeJson(['r' => $resolverKey, 'c' => $contextHash, 'p' => $payload]));
     }
 
     public static function schema(): Schema
@@ -50,6 +51,11 @@ final readonly class Cursor implements ProvidesSchema
         return $this->decode()['r'];
     }
 
+    public function contextHash(): string
+    {
+        return $this->decode()['c'];
+    }
+
     /**
      * @return array<mixed>
      */
@@ -59,14 +65,14 @@ final readonly class Cursor implements ProvidesSchema
     }
 
     /**
-     * @return array{r: string, p: array<mixed>}
+     * @return array{r: string, c: string, p: array<mixed>}
      */
     private function decode(): array
     {
         $data = Base64Url::decodeJson($this->value);
-        if (!is_string($data['r'] ?? null) || !is_array($data['p'] ?? null)) {
+        if (!is_string($data['r'] ?? null) || !is_string($data['c'] ?? null) || !is_array($data['p'] ?? null)) {
             throw new InvalidRequest(sprintf('Cursor "%s" is malformed', $this->value), 1790060201);
         }
-        return ['r' => $data['r'], 'p' => $data['p']];
+        return ['r' => $data['r'], 'c' => $data['c'], 'p' => $data['p']];
     }
 }

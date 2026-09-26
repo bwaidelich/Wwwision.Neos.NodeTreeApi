@@ -37,7 +37,7 @@ Neos:
           uriPrefix: 'neos/node-tree-api'
           info:
             title: 'Neos Node Tree API'
-            version: '0.1.0'
+            version: '0.2.0'
           classes:
             'Wwwision\Neos\NodeTreeApi\Api\NodeTreeApi': true
           specPath: 'openapi.json'

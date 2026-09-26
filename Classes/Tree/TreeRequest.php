@@ -10,6 +10,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Formatter\DatetimeFormatter;
 use Neos\Flow\I18n\Locale;
+use Wwwision\Neos\NodeTreeApi\Api\Model\ItemsContext;
 use Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter;
 use Wwwision\Neos\NodeTreeApi\Resolver\ChildrenResolver;
 use Wwwision\Neos\NodeTreeApi\Resolver\ParentItem;
@@ -24,6 +25,8 @@ final readonly class TreeRequest
     public function __construct(
         public TreeDefinition $tree,
         public ContentSubgraphInterface $subgraph,
+        // identifies site, workspace and dimensions, see {@see ItemsContext::hash()}
+        public string $contextHash,
         private NodeTypeManager $nodeTypeManager,
         private ResolverRegistry $resolverRegistry,
         private NodePresenter $nodePresenter,

@@ -30,17 +30,25 @@ use Neos\Flow\Security\Policy\PolicyService;
 use Neos\Flow\Http\Client\InternalRequestEngine;
 use Neos\Flow\Mvc\Routing\TestingRoutesProvider;
 use Neos\Flow\Tests\FunctionalTestCase;
+use Neos\Flow\Persistence\PersistenceManagerInterface;
+use Neos\Neos\Domain\Model\Domain;
+use Neos\Neos\Domain\Model\Site;
+use Neos\Neos\Domain\Model\User;
 use Neos\Neos\Domain\Model\WorkspaceDescription;
 use Neos\Neos\Domain\Model\WorkspaceRoleAssignments;
 use Neos\Neos\Domain\Model\WorkspaceTitle;
+use Neos\Neos\Domain\Repository\DomainRepository;
+use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Repository\WorkspaceMetadataAndRoleRepository;
+use Neos\Neos\Domain\Service\UserService;
 use Neos\Neos\Domain\Service\WorkspaceService;
 use Neos\Utility\ObjectAccess;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Http\Message\ResponseInterface;
 
 /**
- * Sends requests through Flow to the API, on the content repository "nodetreetest" (see
+ * Sends requests through Flow to the API, for the site "test-site" (with the domain "localhost") on the content
+ * repository "nodetreetest" (see
  * Configuration/Testing/Settings.yaml) with this content (all in en_US, the specialization en_UK falls back to it):
  *
  * - site "Home" (node name "test-site")
@@ -53,7 +61,8 @@ use Psr\Http\Message\ResponseInterface;
 final class NodeTreeApiTest extends FunctionalTestCase
 {
     private const string CONTENT_REPOSITORY = 'nodetreetest';
-    private const string ITEMS = '/nodetreetest/live/trees/documents/items';
+    private const string ITEMS = '/trees/documents/items';
+    private const string EDITOR = 'nodetree-editor';
 
     private static bool $contentCreated = false;
 
@@ -146,7 +155,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
 
     public function testNodesAreFilteredByTheBaseNodeTypeOfTheTree(): void
     {
-        $response = $this->request('/nodetreetest/live/trees/withoutBlogs/items', ['site' => 'test-site', 'dimensions' => '{"language":"en_US"}', 'parent' => 'n.site']);
+        $response = $this->request('/trees/withoutBlogs/items', ['parent' => 'n.site']);
 
         self::assertSame(['not-found', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5'], self::aggregateIds(self::json($response)['levels'][0]));
     }
@@ -180,7 +189,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
 
     public function testFallbackNodesAreRenderedItalicWithBadge(): void
     {
-        $response = $this->request(self::ITEMS, ['site' => 'test-site', 'dimensions' => '{"language":"en_UK"}', 'parent' => 'n.site', 'limit' => 2]);
+        $response = $this->items(['dimensions' => '{"language":"en_UK"}', 'parent' => 'n.site', 'limit' => 2]);
         $item = self::json($response)['levels'][0]['items'][1];
 
         self::assertSame(['italic'], $item['appearance']);
@@ -255,7 +264,6 @@ final class NodeTreeApiTest extends FunctionalTestCase
      */
     public static function invalidRequests(): iterable
     {
-        yield 'unknown site' => [['site' => 'unknown'], 404];
         yield 'unknown parent' => [['parent' => 'n.unknown'], 404];
         yield 'unknown expandTo' => [['expandTo' => 'n.unknown'], 404];
         yield 'virtual parent of unknown resolver' => [['parent' => 'v.unknown.e30'], 404];
@@ -263,6 +271,8 @@ final class NodeTreeApiTest extends FunctionalTestCase
         yield 'dimensions no object' => [['dimensions' => '"en_US"'], 400];
         yield 'dimensions with non-string values' => [['dimensions' => '{"language":{"x":1}}'], 400];
         yield 'unknown dimensions' => [['dimensions' => '{"language":"fr"}'], 400];
+        yield 'invalid workspace name' => [['workspace' => 'Not A Workspace'], 400];
+        yield 'unknown workspace' => [['workspace' => 'unknown'], 403];
         yield 'malformed item id' => [['parent' => 'not an id'], 400];
         yield 'malformed cursor' => [['parent' => 'n.site', 'cursor' => 'abc'], 400];
         yield 'cursor without parent' => [['cursor' => 'abc'], 400];
@@ -298,12 +308,65 @@ final class NodeTreeApiTest extends FunctionalTestCase
 
     public function testWorkspacesWithoutReadPermissionAreForbidden(): void
     {
-        self::assertProblem($this->request('/nodetreetest/restricted/trees/documents/items', ['site' => 'test-site', 'dimensions' => '{"language":"en_US"}']), 403);
+        self::assertProblem($this->items(['workspace' => 'restricted']), 403);
     }
 
     public function testUnknownTreesAreNotFound(): void
     {
-        self::assertProblem($this->request('/nodetreetest/live/trees/unknown/items', ['site' => 'test-site']), 404);
+        self::assertProblem($this->request('/trees/unknown/items'), 404);
+    }
+
+    public function testDefaultsOfTheContextAreResolvedAndReturned(): void
+    {
+        $response = $this->items([]);
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        // there is no Neos user for the account of this request, so there is no personal workspace either
+        self::assertSame([
+            'site' => 'test-site',
+            'contentRepository' => self::CONTENT_REPOSITORY,
+            'workspace' => 'live',
+            'dimensions' => ['language' => 'en_US'],
+        ], self::json($response)['context']);
+    }
+
+    public function testExplicitWorkspaceAndDimensionsAreReturned(): void
+    {
+        $context = self::json($this->items(['workspace' => 'live', 'dimensions' => '{"language":"en_UK"}']))['context'];
+
+        self::assertSame('live', $context['workspace']);
+        self::assertSame(['language' => 'en_UK'], $context['dimensions']);
+    }
+
+    public function testTheWorkspaceDefaultsToThePersonalWorkspaceOfTheUser(): void
+    {
+        $response = $this->request(self::ITEMS, ['parent' => 'n.site', 'limit' => 1], account: $this->editorAccount());
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $personalWorkspaceName = $this->objectManager->get(WorkspaceService::class)
+            ->getPersonalWorkspaceForUser(ContentRepositoryId::fromString(self::CONTENT_REPOSITORY), $this->editor()->getId())
+            ->workspaceName;
+        self::assertSame($personalWorkspaceName->value, self::json($response)['context']['workspace']);
+        self::assertNotSame('live', $personalWorkspaceName->value);
+        // the personal workspace is based on live, and has the same content
+        self::assertSame(['not-found'], self::aggregateIds(self::json($response)['levels'][0]));
+    }
+
+    public function testTheSiteIsDetectedFromTheDomainOfTheRequest(): void
+    {
+        $response = $this->request(self::ITEMS, host: 'other.test');
+
+        // "other-site" has the domain "other.test", but no site node
+        self::assertProblem($response, 404);
+        self::assertStringContainsString('"other-site"', self::json($response)['detail']);
+    }
+
+    public function testCursorsAreBoundToWorkspaceAndDimensions(): void
+    {
+        $cursor = $this->levels(['parent' => 'n.site', 'limit' => 1])[0]['nextCursor'];
+
+        self::assertSame(200, $this->items(['parent' => 'n.site', 'limit' => 1, 'cursor' => $cursor, 'dimensions' => '{"language":"en_US"}'])->getStatusCode());
+        self::assertProblem($this->items(['parent' => 'n.site', 'limit' => 1, 'cursor' => $cursor, 'dimensions' => '{"language":"en_UK"}']), 400);
     }
 
     private function createContent(): void
@@ -316,6 +379,8 @@ final class NodeTreeApiTest extends FunctionalTestCase
         $metadataAndRoleRepository = $this->objectManager->get(WorkspaceMetadataAndRoleRepository::class);
         $metadataAndRoleRepository->pruneWorkspaceMetadata($contentRepositoryId);
         $metadataAndRoleRepository->pruneRoleAssignments($contentRepositoryId);
+
+        $this->createSites();
 
         $workspaceService = $this->objectManager->get(WorkspaceService::class);
         $workspaceService->createRootWorkspace($contentRepositoryId, WorkspaceName::forLive(), WorkspaceTitle::fromString('Live'), WorkspaceDescription::createEmpty(), WorkspaceRoleAssignments::createForLiveWorkspace());
@@ -337,6 +402,8 @@ final class NodeTreeApiTest extends FunctionalTestCase
         }
         $this->createNode('category', 'Neos.Demo:Document.BlogCategory', 'blog', ['title' => 'Category']);
         $contentRepository->handle(DisableNodeAggregate::create(WorkspaceName::forLive(), NodeAggregateId::fromString('page-3'), DimensionSpacePoint::fromArray(['language' => 'en_US']), NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS));
+        // after the content is created, so that the workspace (which is based on live) contains it
+        $workspaceService->createPersonalWorkspaceForUserIfMissing($contentRepositoryId, $this->editor());
     }
 
     /**
@@ -362,6 +429,51 @@ final class NodeTreeApiTest extends FunctionalTestCase
         $this->contentRepository()->handle($command);
     }
 
+    /**
+     * The sites "test-site" (domain "localhost") and "other-site" (domain "other.test") – they are persisted with
+     * Doctrine, so they survive between test runs and are replaced
+     */
+    private function createSites(): void
+    {
+        $siteRepository = $this->objectManager->get(SiteRepository::class);
+        $domainRepository = $this->objectManager->get(DomainRepository::class);
+        $domainRepository->removeAll();
+        $siteRepository->removeAll();
+        $this->objectManager->get(PersistenceManagerInterface::class)->persistAll();
+        foreach (['test-site' => 'localhost', 'other-site' => 'other.test'] as $siteNodeName => $hostname) {
+            $site = new Site($siteNodeName);
+            $site->setSiteResourcesPackageKey('Neos.Demo');
+            $site->setState(Site::STATE_ONLINE);
+            $siteRepository->add($site);
+            $domain = new Domain();
+            $domain->setHostname($hostname);
+            $domain->setSite($site);
+            $domainRepository->add($domain);
+        }
+        $this->objectManager->get(PersistenceManagerInterface::class)->persistAll();
+    }
+
+    /**
+     * A Neos user – persisted with Doctrine, so it is only created once
+     */
+    private function editor(): User
+    {
+        $userService = $this->objectManager->get(UserService::class);
+        $user = $userService->getUser(self::EDITOR);
+        if ($user === null) {
+            $user = $userService->createUser(self::EDITOR, 'password', 'Node', 'Tree', ['Neos.Neos:Editor']);
+            $this->objectManager->get(PersistenceManagerInterface::class)->persistAll();
+        }
+        return $user;
+    }
+
+    private function editorAccount(): Account
+    {
+        $account = $this->editor()->getAccounts()->first();
+        self::assertInstanceOf(Account::class, $account);
+        return $account;
+    }
+
     private function contentRepository(): ContentRepository
     {
         return $this->objectManager->get(ContentRepositoryRegistry::class)->get(ContentRepositoryId::fromString(self::CONTENT_REPOSITORY));
@@ -372,7 +484,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
      */
     private function items(array $parameters, bool $authenticated = true): ResponseInterface
     {
-        return $this->request(self::ITEMS, [...['site' => 'test-site', 'dimensions' => '{"language":"en_US"}'], ...$parameters], $authenticated);
+        return $this->request(self::ITEMS, $parameters, $authenticated);
     }
 
     /**
@@ -389,7 +501,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
     /**
      * @param array<string, string|int> $queryParameters
      */
-    private function request(string $path, array $queryParameters = [], bool $authenticated = true): ResponseInterface
+    private function request(string $path, array $queryParameters = [], bool $authenticated = true, Account|null $account = null, string $host = 'localhost'): ResponseInterface
     {
         // the authentication manager remembers whether it authenticated during the previous request
         $this->inject($this->objectManager->get(AuthenticationManagerInterface::class), 'isAuthenticated', null);
@@ -397,15 +509,17 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertInstanceOf(TestingProvider::class, $testingProvider);
         $testingProvider->reset();
         if ($authenticated) {
-            $account = new Account();
-            $account->setAccountIdentifier('editor');
-            $account->setAuthenticationProviderName('TestingProvider');
-            $account->setRoles([$this->objectManager->get(PolicyService::class)->getRole('Neos.Neos:Editor')]);
+            if ($account === null) {
+                $account = new Account();
+                $account->setAccountIdentifier('editor');
+                $account->setAuthenticationProviderName('TestingProvider');
+                $account->setRoles([$this->objectManager->get(PolicyService::class)->getRole('Neos.Neos:Editor')]);
+            }
             $testingProvider->setAccount($account);
             $testingProvider->setAuthenticationStatus(TokenInterface::AUTHENTICATION_SUCCESSFUL);
         }
         $this->securityContext->clearContext();
-        $request = new ServerRequest('GET', 'http://localhost/neos/node-tree-api' . $path . ($queryParameters !== [] ? '?' . http_build_query($queryParameters) : ''));
+        $request = new ServerRequest('GET', 'http://' . $host . '/neos/node-tree-api' . $path . ($queryParameters !== [] ? '?' . http_build_query($queryParameters) : ''));
         return $this->browser->sendRequest($request->withQueryParams(array_map('strval', $queryParameters)));
     }
 

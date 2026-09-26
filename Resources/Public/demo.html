@@ -69,10 +69,8 @@
 <header>
     <h1>Node Tree API</h1>
     <label>Tree <select id="treeId"></select></label>
-    <label>Content repository <input id="contentRepository" value="default" size="8"></label>
-    <label>Workspace <input id="workspace" value="live" size="12"></label>
-    <label>Site <input id="site" value="neosdemo" size="10"></label>
-    <label>Dimensions <input id="dimensions" value='{"language":"en_US"}' size="20"></label>
+    <label>Workspace <input id="workspace" placeholder="personal workspace" size="16"></label>
+    <label>Dimensions <input id="dimensions" placeholder="default of the site" size="20"></label>
     <label>Limit <input id="limit" type="number" value="20" min="1" max="200" style="width: 5em"></label>
     <label>Expand to <input id="expandTo" placeholder="item id" size="24"></label>
     <button class="primary" id="load">Load</button>
@@ -83,6 +81,8 @@
     <div class="panel" id="details">
         <h2>Selected item</h2>
         <pre id="selected">Click an item</pre>
+        <h2 style="margin-top: 16px">Context</h2>
+        <pre id="context">–</pre>
         <div id="log"></div>
     </div>
 </main>
@@ -91,12 +91,14 @@
     const $ = (id) => document.getElementById(id);
     const settings = () => ({
         tree: $('treeId').value,
-        contentRepository: $('contentRepository').value,
         workspace: $('workspace').value,
-        site: $('site').value,
         dimensions: $('dimensions').value,
         limit: $('limit').value,
     });
+
+    // the context the tree was loaded in – the following pages are requested in the same one, since cursors are
+    // bound to it (and the defaults could change in the meantime)
+    let context = null;
 
     let requestCount = 0;
 
@@ -119,9 +121,9 @@
 
     function listItems(extraParams) {
         const s = settings();
-        return api(`${encodeURIComponent(s.contentRepository)}/${encodeURIComponent(s.workspace)}/trees/${encodeURIComponent(s.tree)}/items`, {
-            site: s.site,
-            dimensions: s.dimensions,
+        return api(`trees/${encodeURIComponent(s.tree)}/items`, {
+            workspace: context?.workspace ?? s.workspace,
+            dimensions: context ? JSON.stringify(context.dimensions) : s.dimensions,
             limit: s.limit,
             ...extraParams,
         });
@@ -265,9 +267,12 @@
     async function load() {
         const tree = $('tree');
         tree.replaceChildren();
+        context = null;
         try {
             const expandTo = $('expandTo').value.trim();
             const result = await listItems({expandTo});
+            context = result.context;
+            $('context').textContent = JSON.stringify(context, null, 2);
             const levelsByParentId = Object.fromEntries(result.levels.filter((level) => level.parentId !== null).map((level) => [level.parentId, level]));
             renderLevel(tree, result.levels[0], levelsByParentId);
             if (expandTo) {

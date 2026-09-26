@@ -27,23 +27,31 @@ browser that is logged in to Neos, open
 | Operation | |
 | --- | --- |
 | `GET /trees` | The available trees: `[{id, label, icon}]` |
-| `GET /{contentRepository}/{workspace}/trees/{tree}/items` | Levels of a tree, see below |
+| `GET /trees/{tree}/items` | Levels of a tree, see below |
 
-The query parameters of `items`:
+The site is detected from the domain of the request, like for the rest of Neos (a site with a matching domain, or else
+the first online site), and determines the content repository. All query parameters of `items` are optional:
 
 | Parameter | |
 | --- | --- |
-| `site` | The node name of the site, e.g. `neosdemo` (required) |
-| `dimensions` | The dimension values as JSON object, e.g. `{"language":"en_US"}` |
+| `workspace` | The workspace to show, by default the personal workspace of the current user (or `live` if there is none) |
+| `dimensions` | The dimension values as JSON object, e.g. `{"language":"en_US"}`, by default the default dimensions of the site |
 | `parent` | The item whose children to list. Without it, the root level is returned: the site node |
-| `cursor` | The `previousCursor` or `nextCursor` of a level, to get the previous/next page of the same parent |
+| `cursor` | The `previousCursor` or `nextCursor` of a level, to get the previous/next page of the same parent – in the same workspace and dimensions |
 | `limit` | The maximum number of items per level (default 50, maximum 200) |
 | `expandTo` | An item to reveal: returns the root level and all levels down to the one containing the item, each a window around the respective ancestor. Can't be combined with `parent` or `cursor` |
 
-The result is a flat list of levels (JSON schemas can't be recursive):
+The result contains the context the items come from – including the defaults for values that were not part of the
+request – and a flat list of levels (JSON schemas can't be recursive):
 
 ```json
 {
+  "context": {
+    "site": "neosdemo",
+    "contentRepository": "default",
+    "workspace": "user-bwaidelich",
+    "dimensions": {"language": "en_US"}
+  },
   "levels": [
     {
       "parentId": "n.995c9174-ddd6-4d5c-cfc0-1ffc82184677",
@@ -82,7 +90,9 @@ The result is a flat list of levels (JSON schemas can't be recursive):
 }
 ```
 
-Item ids and cursors are opaque to clients. Items with `node: null` are virtual.
+Item ids and cursors are opaque to clients. Items with `node: null` are virtual. Cursors are bound to the site,
+workspace and dimensions they were created for – to page through a level, pass the `workspace` and `dimensions` of
+the `context` along.
 
 ### Rendering
 
@@ -194,6 +204,8 @@ are requested.
   which is fine as long as the API is read-only.
 - **Read access** is enforced by the content repository: nodes the user may not read are not visible, and requesting
   a workspace without read permission results in a `403` – also for workspaces that don't exist.
+- **Context:** the only default that depends on the session is the workspace. Everything that was defaulted is part
+  of the `context` of the result.
 - **Pagination** of the default resolver is relative to siblings ("after node X"), so pages don't shift when nodes are
   added or removed while scrolling. If the node a cursor refers to is moved away, the following pages are the ones of
   its new parent.
