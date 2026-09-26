@@ -36,6 +36,11 @@ final readonly class DefaultNodeResolver implements ChildrenResolver
         return [new ResolvedLevel($parent->id, $context->nodeItems($page['nodes']), $page['previousCursor'], $page['nextCursor'])];
     }
 
+    public function dragAndDrop(ResolverContext $context, Item $item): DragAndDrop
+    {
+        return DragAndDrop::all();
+    }
+
     private function pagination(ResolverContext $context): SiblingPagination
     {
         return new SiblingPagination($context->subgraph, $context->tree->nodeTypes);

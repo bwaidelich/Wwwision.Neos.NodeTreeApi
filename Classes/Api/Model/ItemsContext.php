@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Wwwision\Neos\NodeTreeApi\Api\Model;
 
+use Neos\JsonSchema\BooleanSchema;
 use Neos\JsonSchema\ObjectSchema;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -23,6 +24,8 @@ final readonly class ItemsContext implements ProvidesSchema
         public string $contentRepository,
         public string $workspace,
         public array $dimensions,
+        // whether the current user may change the content of the workspace – otherwise no item can be moved
+        public bool $writable,
     ) {
     }
 
@@ -40,9 +43,10 @@ final readonly class ItemsContext implements ProvidesSchema
                     examples: [['language' => 'en_US']],
                     additionalProperties: true,
                 ),
+                writable: BooleanSchema::create(description: 'Whether the current user may change the content of the workspace'),
             ),
             additionalProperties: false,
-            required: ['site', 'contentRepository', 'workspace', 'dimensions'],
+            required: ['site', 'contentRepository', 'workspace', 'dimensions', 'writable'],
         );
     }
 

@@ -36,6 +36,9 @@ use Wwwision\Neos\NodeTreeApi\Tree\NotFound;
  *       groupedNodeType: 'Neos.Demo:Document.BlogPosting'
  *       property: 'datePublished'
  *
+ * Grouped nodes can be dragged, but nothing can be dropped before or after them since their order is the one of their
+ * dates. Dropping a grouped node "into" the parent adds it to the group of its date.
+ *
  * Grouping uses the date as it is stored, i.e. in the timezone it was entered in. Grouped nodes without a date are
  * not listed. The years and months of a parent are not paginated – with a limit only for the other children
  */
@@ -133,6 +136,14 @@ final readonly class DateGroupingResolver implements ChildrenResolver
         ));
         $levels[] = $this->groupedNodesPage($context, $groupId, $parentNodeAggregateId, $datePrefix, max(0, $index - intdiv($limit - 1, 2)), $limit);
         return $levels;
+    }
+
+    /**
+     * Grouped nodes are ordered by their date, so dropping items before or after them has no effect
+     */
+    public function dragAndDrop(ResolverContext $context, Item $item): DragAndDrop
+    {
+        return new DragAndDrop(draggable: true, sortable: $item->node === null || $this->dateOf($context, $item->node) === null);
     }
 
     /**

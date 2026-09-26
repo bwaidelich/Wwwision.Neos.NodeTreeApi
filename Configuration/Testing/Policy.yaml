@@ -1,0 +1,11 @@
+# Nodes tagged "locked" (see the functional tests) can only be edited by administrators
+privilegeTargets:
+  'Neos\Neos\Security\Authorization\Privilege\EditNodePrivilege':
+    'Wwwision.Neos.NodeTreeApi:Testing.EditLockedNodes':
+      matcher: 'locked'
+
+roles:
+  'Neos.Neos:Administrator':
+    privileges:
+      - privilegeTarget: 'Wwwision.Neos.NodeTreeApi:Testing.EditLockedNodes'
+        permission: GRANT

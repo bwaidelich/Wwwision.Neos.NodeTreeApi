@@ -50,7 +50,8 @@ request – and a flat list of levels (JSON schemas can't be recursive):
     "site": "neosdemo",
     "contentRepository": "default",
     "workspace": "user-bwaidelich",
-    "dimensions": {"language": "en_US"}
+    "dimensions": {"language": "en_US"},
+    "writable": true
   },
   "levels": [
     {
@@ -67,6 +68,9 @@ request – and a flat list of levels (JSON schemas can't be recursive):
             {"icon": "low-vision", "tooltip": "Hidden in menus"}
           ],
           "hasChildren": true,
+          "draggable": true,
+          "sortable": true,
+          "dropKey": "Neos.Demo:Document.Blog",
           "node": {
             "aggregateId": "d87adae6-9e61-4dbc-b596-219abe1e45a2",
             "nodeTypeName": "Neos.Demo:Document.Blog"
@@ -80,6 +84,9 @@ request – and a flat list of levels (JSON schemas can't be recursive):
           "appearance": [],
           "badges": [],
           "hasChildren": true,
+          "draggable": false,
+          "sortable": false,
+          "dropKey": null,
           "node": null
         }
       ],
@@ -123,7 +130,20 @@ Wwwision\Neos\NodeTreeApi\Presentation\NodePresenter:
   className: 'Some\Package\CustomNodePresenter'
 ```
 
-Virtual items are rendered by the resolver that creates them, see below. Errors are
+Virtual items are rendered by the resolver that creates them, see below.
+
+### Drag and drop
+
+Items tell how they can be moved – without the client knowing anything about node types or permissions:
+
+- `draggable`: the item can be moved. Not for virtual items, the site node, tethered nodes, nodes the user may not
+  edit, or if the resolver of its level says so
+- `sortable`: items can be dropped before and after it. Not for virtual items, or if the order of its level is not the
+  order of the nodes (e.g. blog postings grouped by date)
+- `dropKey`: identifies the node type constraints for the children of the item. Null if nothing may be moved into it:
+  for virtual items, and nodes the user may not edit
+
+`context.writable` is false if the user may not change the workspace – then no item is draggable. Errors are
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem documents: `400` for invalid input (including malformed
 cursors), `401` without backend session, `403` if the workspace may not be read, `404` for unknown trees, sites or
 items.
@@ -211,6 +231,9 @@ are requested.
   its new parent.
 - **`hasChildren`** costs one count query per item – the content graph can't count the children of several nodes at
   once. The resolver interface is batch-capable, so this can be optimized without changing the API.
+- **Permissions** for drag and drop are evaluated per combination of subtree tags, since that's all they depend on.
+  Moving a node requires edit permission on the node *and* on its new parent – the content repository itself only
+  checks the moved node.
 - **Date grouping** uses the date as it is stored, i.e. in the timezone it was entered in. Grouped nodes without a date
   are not listed. Years and months are not paginated.
 

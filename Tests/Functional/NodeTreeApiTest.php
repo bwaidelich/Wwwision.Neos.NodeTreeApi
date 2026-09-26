@@ -13,6 +13,8 @@ use Neos\ContentRepository\Core\Feature\NodeCreation\Dto\NodeAggregateIdsByNodeP
 use Neos\ContentRepository\Core\Feature\NodeDisabling\Command\DisableNodeAggregate;
 use Neos\ContentRepository\Core\Feature\NodeModification\Dto\PropertyValuesToWrite;
 use Neos\ContentRepository\Core\Feature\RootNodeCreation\Command\CreateRootNodeAggregateWithNode;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\TagSubtree;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Dto\SubtreeTag;
 use Neos\ContentRepository\Core\NodeType\NodeTypeName;
 use Neos\ContentRepository\Core\Service\ContentRepositoryMaintainerFactory;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
@@ -35,6 +37,8 @@ use Neos\Neos\Domain\Model\Domain;
 use Neos\Neos\Domain\Model\Site;
 use Neos\Neos\Domain\Model\User;
 use Neos\Neos\Domain\Model\WorkspaceDescription;
+use Neos\Neos\Domain\Model\WorkspaceRole;
+use Neos\Neos\Domain\Model\WorkspaceRoleAssignment;
 use Neos\Neos\Domain\Model\WorkspaceRoleAssignments;
 use Neos\Neos\Domain\Model\WorkspaceTitle;
 use Neos\Neos\Domain\Repository\DomainRepository;
@@ -57,6 +61,10 @@ use Psr\Http\Message\ResponseInterface;
  *     scheduled to be visible from 2030, page-5 is hidden in menus
  *   - blog, with the postings post-a (2026-09-10), post-b (2026-09-01), post-c (2026-03-05), post-d (2024-12-24)
  *     and the category "category"
+ *   - locked, with a child locked-1 – tagged "locked", which only administrators may edit (see
+ *     Configuration/Testing/Policy.yaml)
+ *
+ * The workspace "restricted" can't be read by editors, "readonly" can only be read
  */
 final class NodeTreeApiTest extends FunctionalTestCase
 {
@@ -126,6 +134,9 @@ final class NodeTreeApiTest extends FunctionalTestCase
             'appearance' => [],
             'badges' => [],
             'hasChildren' => true,
+            'draggable' => false,
+            'sortable' => false,
+            'dropKey' => 'Neos.Demo:Document.Homepage',
             'node' => [
                 'aggregateId' => 'site',
                 'nodeTypeName' => 'Neos.Demo:Document.Homepage',
@@ -145,7 +156,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertSame([false, false, true, true], array_column($firstPage['items'], 'hasChildren'));
 
         $secondPage = $this->levels(['parent' => 'n.site', 'limit' => 4, 'cursor' => $firstPage['nextCursor']])[0];
-        self::assertSame(['page-4', 'page-5', 'blog'], self::aggregateIds($secondPage));
+        self::assertSame(['page-4', 'page-5', 'blog', 'locked'], self::aggregateIds($secondPage));
         self::assertNull($secondPage['nextCursor']);
 
         $backToFirstPage = $this->levels(['parent' => 'n.site', 'limit' => 4, 'cursor' => $secondPage['previousCursor']])[0];
@@ -157,7 +168,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
     {
         $response = $this->request('/trees/withoutBlogs/items', ['parent' => 'n.site']);
 
-        self::assertSame(['not-found', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5'], self::aggregateIds(self::json($response)['levels'][0]));
+        self::assertSame(['not-found', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5', 'locked'], self::aggregateIds(self::json($response)['levels'][0]));
     }
 
     public function testNodeStatesAreRenderedAsAppearanceAndBadges(): void
@@ -217,7 +228,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertSame(['not-found', 'page-1', 'page-2'], self::aggregateIds($previousPage));
         self::assertNull($previousPage['previousCursor']);
         $nextPage = $this->levels(['parent' => 'n.site', 'limit' => 3, 'cursor' => $levels[1]['nextCursor']])[0];
-        self::assertSame(['blog'], self::aggregateIds($nextPage));
+        self::assertSame(['blog', 'locked'], self::aggregateIds($nextPage));
     }
 
     public function testBlogPostingsAreGroupedByYearAndMonth(): void
@@ -327,6 +338,7 @@ final class NodeTreeApiTest extends FunctionalTestCase
             'contentRepository' => self::CONTENT_REPOSITORY,
             'workspace' => 'live',
             'dimensions' => ['language' => 'en_US'],
+            'writable' => true,
         ], self::json($response)['context']);
     }
 
@@ -369,6 +381,35 @@ final class NodeTreeApiTest extends FunctionalTestCase
         self::assertProblem($this->items(['parent' => 'n.site', 'limit' => 1, 'cursor' => $cursor, 'dimensions' => '{"language":"en_UK"}']), 400);
     }
 
+    public function testItemsTellHowTheyCanBeDraggedAndDropped(): void
+    {
+        $siteChildren = array_column($this->levels(['parent' => 'n.site'])[0]['items'], null, 'id');
+        self::assertSame([true, true, 'Neos.Demo:Document.Page'], self::dragAndDrop($siteChildren['n.page-1']));
+        // tethered nodes can't be moved, their children are constrained by the parent
+        self::assertSame([false, true, 'Neos.Demo:Document.Homepage/notfound'], self::dragAndDrop($siteChildren['n.not-found']));
+        // no edit permission
+        self::assertSame([false, true, null], self::dragAndDrop($siteChildren['n.locked']));
+        self::assertSame([false, true, null], self::dragAndDrop($this->levels(['parent' => 'n.locked'])[0]['items'][0]));
+
+        $blogChildren = $this->levels(['parent' => 'n.blog'])[0]['items'];
+        // virtual items
+        self::assertSame([false, false, null], self::dragAndDrop($blogChildren[0]));
+        self::assertSame([true, true, 'Neos.Demo:Document.BlogCategory'], self::dragAndDrop($blogChildren[2]));
+        // grouped nodes are ordered by date
+        $postings = $this->levels(['expandTo' => 'n.post-a'])[4]['items'];
+        self::assertSame([true, false, 'Neos.Demo:Document.BlogPosting'], self::dragAndDrop($postings[0]));
+    }
+
+    public function testNothingCanBeMovedWithoutWritePermissionForTheWorkspace(): void
+    {
+        $response = $this->items(['workspace' => 'readonly', 'parent' => 'n.site', 'limit' => 2]);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $result = self::json($response);
+
+        self::assertFalse($result['context']['writable']);
+        self::assertSame([false, true, null], self::dragAndDrop($result['levels'][0]['items'][1]));
+    }
+
     private function createContent(): void
     {
         $contentRepositoryId = ContentRepositoryId::fromString(self::CONTENT_REPOSITORY);
@@ -401,9 +442,13 @@ final class NodeTreeApiTest extends FunctionalTestCase
             $this->createNode($id, 'Neos.Demo:Document.BlogPosting', 'blog', ['title' => 'Posting ' . $id, 'datePublished' => new \DateTimeImmutable($date . 'T10:00:00+02:00')]);
         }
         $this->createNode('category', 'Neos.Demo:Document.BlogCategory', 'blog', ['title' => 'Category']);
+        $this->createNode('locked', 'Neos.Demo:Document.Page', 'site', ['title' => 'Locked']);
+        $this->createNode('locked-1', 'Neos.Demo:Document.Page', 'locked', ['title' => 'Locked 1']);
+        $contentRepository->handle(TagSubtree::create(WorkspaceName::forLive(), NodeAggregateId::fromString('locked'), DimensionSpacePoint::fromArray(['language' => 'en_US']), NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS, SubtreeTag::fromString('locked')));
         $contentRepository->handle(DisableNodeAggregate::create(WorkspaceName::forLive(), NodeAggregateId::fromString('page-3'), DimensionSpacePoint::fromArray(['language' => 'en_US']), NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS));
-        // after the content is created, so that the workspace (which is based on live) contains it
+        // after the content is created, so that the workspaces (which are based on live) contain it
         $workspaceService->createPersonalWorkspaceForUserIfMissing($contentRepositoryId, $this->editor());
+        $workspaceService->createSharedWorkspace($contentRepositoryId, WorkspaceName::fromString('readonly'), WorkspaceTitle::fromString('Read-only'), WorkspaceDescription::createEmpty(), WorkspaceName::forLive(), WorkspaceRoleAssignments::create(WorkspaceRoleAssignment::createForGroup('Neos.Neos:AbstractEditor', WorkspaceRole::VIEWER)));
     }
 
     /**
@@ -530,6 +575,15 @@ final class NodeTreeApiTest extends FunctionalTestCase
     private static function aggregateIds(array $level): array
     {
         return array_map(static fn (array $item) => $item['node']['aggregateId'] ?? $item['id'], $level['items']);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array{mixed, mixed, mixed} draggable, sortable and dropKey
+     */
+    private static function dragAndDrop(array $item): array
+    {
+        return [$item['draggable'], $item['sortable'], $item['dropKey']];
     }
 
     /**

@@ -41,4 +41,13 @@ interface ChildrenResolver
      * @return non-empty-list<ResolvedLevel>
      */
     public function resolveAround(ResolverContext $context, ParentItem $parent, Node $descendant, int $limit): array;
+
+    /**
+     * Whether an item of the levels this resolver lists can be dragged, and whether items can be dropped before and
+     * after it
+     *
+     * Only called for items that represent nodes: virtual items can neither be dragged nor dropped onto. Moving a node
+     * "into" another one is up to the tree, it always appends the node to the children
+     */
+    public function dragAndDrop(ResolverContext $context, Item $item): DragAndDrop;
 }

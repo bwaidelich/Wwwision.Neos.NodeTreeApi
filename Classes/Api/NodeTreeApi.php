@@ -27,6 +27,8 @@ use Wwwision\Neos\NodeTreeApi\Tree\LabelTranslator;
 use Wwwision\Neos\NodeTreeApi\Tree\NotFound as NotFoundException;
 use Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions;
 use Wwwision\Neos\NodeTreeApi\Tree\TreeLoader;
+use Wwwision\Neos\NodeTreeApi\Tree\TreeRequest;
+use Wwwision\Neos\NodeTreeApi\Tree\TreeRequestFactory;
 
 /**
  * The HTTP API for the node trees of the Neos backend
@@ -36,6 +38,7 @@ final readonly class NodeTreeApi
     public function __construct(
         private TreeDefinitions $treeDefinitions,
         private LabelTranslator $labelTranslator,
+        private TreeRequestFactory $treeRequestFactory,
         private TreeLoader $treeLoader,
     ) {
     }
@@ -82,13 +85,25 @@ final readonly class NodeTreeApi
         #[Parameter(in: ParameterLocation::query, description: 'An item (representing a node) to reveal: returns the root level and all levels down to the one containing it, each around the respective ancestor. Can\'t be combined with "parent" or "cursor"')]
         ItemId|null $expandTo = null,
     ): ItemsResult|BadRequest|Forbidden|NotFound {
+        return $this->handle($tree, $request, $workspace, $dimensions, fn (TreeRequest $treeRequest) => $this->treeLoader->load($treeRequest, $parent, $cursor, ($limit ?? Limit::default())->value, $expandTo));
+    }
+
+    /**
+     * Resolves the tree request (site, workspace, dimensions) and maps the exceptions of $handler to problem responses
+     *
+     * @template T of object
+     * @param \Closure(TreeRequest): T $handler
+     * @return T|BadRequest|Forbidden|NotFound
+     */
+    private function handle(TreeId $tree, ServerRequestInterface $request, string|null $workspace, string|null $dimensions, \Closure $handler): object
+    {
         try {
             $detectedSite = SiteDetectionResult::fromRequest($request);
         } catch (SiteDetectionFailedException) {
             return new NotFound('There is no site for the domain of the request');
         }
         try {
-            return $this->treeLoader->load($tree, $detectedSite, $workspace, $dimensions, $parent, $cursor, ($limit ?? Limit::default())->value, $expandTo);
+            return $handler($this->treeRequestFactory->create($tree, $detectedSite, $workspace, $dimensions));
         } catch (InvalidRequest $exception) {
             return new BadRequest($exception->getMessage());
         } catch (ForbiddenException $exception) {
