@@ -13,11 +13,6 @@ use Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitionsFactory;
 
 final class TreeDefinitionsFactoryTest extends TestCase
 {
-    private const array PRESETS = [
-        'default' => ['baseNodeType' => 'Neos.Neos:Document'],
-        'blog' => ['baseNodeType' => 'Some.Package:Blog', 'ui' => ['label' => 'Blog', 'icon' => 'newspaper']],
-    ];
-
     private NodeTypeManager $nodeTypeManager;
 
     protected function setUp(): void
@@ -31,9 +26,13 @@ final class TreeDefinitionsFactoryTest extends TestCase
         ]);
     }
 
-    public function testOneTreeIsDerivedFromEveryPreset(): void
+    public function testTreesAreCreatedFromTheSettings(): void
     {
-        $definitions = $this->create([], self::PRESETS);
+        $definitions = $this->create([
+            'default' => ['label' => 'Neos.Neos:Main:document', 'icon' => 'sitemap', 'baseNodeType' => 'Neos.Neos:Document'],
+            'removed' => null,
+            'blog' => ['label' => 'Blog', 'icon' => 'newspaper', 'baseNodeType' => 'Some.Package:Blog'],
+        ]);
 
         self::assertSame(['default', 'blog'], $this->treeIds($definitions));
         $blog = $definitions->get(TreeId::fromString('blog'));
@@ -41,34 +40,29 @@ final class TreeDefinitionsFactoryTest extends TestCase
         self::assertSame('Blog', $blog->label);
         self::assertSame('newspaper', $blog->icon);
         self::assertSame('Some.Package:Blog', $blog->nodeTypes->toFilterString());
-        self::assertSame('Neos.Neos:Main:document', $definitions->get(TreeId::fromString('default'))?->label);
     }
 
-    public function testDerivingTreesFromPresetsCanBeDisabled(): void
+    public function testTreesFallBackToDefaults(): void
     {
-        self::assertSame([], $this->treeIds($this->create(['derivedFromPresets' => false], self::PRESETS)));
+        $folders = $this->create(['folders' => []])->get(TreeId::fromString('folders'));
+
+        self::assertNotNull($folders);
+        self::assertSame('folders', $folders->label);
+        self::assertSame('sitemap', $folders->icon);
+        self::assertSame('Neos.Neos:Document', $folders->nodeTypes->toFilterString());
     }
 
-    public function testTreesCanBeAdjustedRemovedAndAdded(): void
+    public function testNoTreesCanBeConfigured(): void
     {
-        $definitions = $this->create(['trees' => [
-            'default' => ['icon' => 'tree'],
-            'blog' => null,
-            'folders' => ['label' => 'Folders', 'baseNodeType' => 'Some.Package:Folder'],
-        ]], self::PRESETS);
-
-        self::assertSame(['default', 'folders'], $this->treeIds($definitions));
-        $default = $definitions->get(TreeId::fromString('default'));
-        self::assertSame('tree', $default?->icon);
-        self::assertSame('Neos.Neos:Document', $default->nodeTypes->toFilterString());
+        self::assertSame([], $this->treeIds($this->create(null)));
     }
 
     public function testChildrenResolversAreMatchedInTheOrderOfTheirPosition(): void
     {
-        $definitions = $this->create(['trees' => ['default' => ['childrenResolvers' => [
+        $definitions = $this->create(['default' => ['childrenResolvers' => [
             'blog' => ['nodeType' => 'Some.Package:Blog', 'resolver' => 'blogResolver'],
             'special' => ['nodeType' => 'Some.Package:SpecialBlog', 'resolver' => 'specialResolver', 'position' => 'start'],
-        ]]]], self::PRESETS);
+        ]]]);
         $default = $definitions->get(TreeId::fromString('default'));
         self::assertNotNull($default);
 
@@ -81,15 +75,15 @@ final class TreeDefinitionsFactoryTest extends TestCase
     public function testChildrenResolversNeedNodeTypeAndResolver(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->create(['trees' => ['default' => ['childrenResolvers' => ['broken' => ['nodeType' => 'Some.Package:Blog']]]]], self::PRESETS);
+        $this->create(['default' => ['childrenResolvers' => ['broken' => ['nodeType' => 'Some.Package:Blog']]]]);
     }
 
     public function testTreesContainNodesOfAllowedButNotOfDisallowedTypes(): void
     {
-        $definitions = $this->create(['trees' => [
+        $definitions = $this->create([
             'default' => ['baseNodeType' => 'Neos.Neos:Document,!Some.Package:Blog'],
             'everything' => ['baseNodeType' => '!Some.Package:Folder'],
-        ]], self::PRESETS);
+        ]);
         $default = $definitions->get(TreeId::fromString('default'));
         $everything = $definitions->get(TreeId::fromString('everything'));
         self::assertNotNull($default);
@@ -103,12 +97,11 @@ final class TreeDefinitionsFactoryTest extends TestCase
     }
 
     /**
-     * @param array<mixed> $settings
-     * @param array<mixed> $presets
+     * @param array<mixed>|null $treeConfigurations
      */
-    private function create(array $settings, array $presets): \Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions
+    private function create(array|null $treeConfigurations): \Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions
     {
-        return (new TreeDefinitionsFactory($settings, $presets))->create();
+        return (new TreeDefinitionsFactory($treeConfigurations))->create();
     }
 
     /**

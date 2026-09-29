@@ -1,5 +1,5 @@
-# The functional tests work on a site and content repository of their own, with trees that don't depend on the presets
-# of the distribution
+# The functional tests work on a site and content repository of their own, with trees that don't depend on the ones
+# shipped with the package
 Neos:
   Neos:
     sites:
@@ -33,7 +33,6 @@ Neos:
 Wwwision:
   Neos:
     NodeTreeApi:
-      derivedFromPresets: false
       authenticationProviders:
         # the provider of FunctionalTestCase::authenticateRoles()
         'TestingProvider': true
@@ -44,6 +43,7 @@ Wwwision:
             groupedNodeType: 'Neos.Demo:Document.BlogPosting'
             property: 'datePublished'
       trees:
+        'default': ~
         'documents':
           label: 'Neos.Neos:Main:document'
           icon: 'sitemap'

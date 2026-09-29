@@ -5,7 +5,7 @@ An OpenAPI compliant HTTP API for the node trees of the Neos backend, built on
 
 It explores a better API for the navigate component of the Neos UI:
 
-- a tree per configured node tree preset (and any number of additional trees)
+- **configurable trees** – a tree of all documents by default, and any number of additional ones
 - **virtual items** – entries that don't represent a node, e.g. blog postings grouped by year and month
 - one level at a time, with **cursor based pagination** for endless scrolling
 - revealing a deeply nested node with a **single request**
@@ -183,10 +183,10 @@ sites or items, `409` for refused moves.
 
 ### Trees
 
-One tree is derived from every `Neos.Neos.userInterface.navigateComponent.nodeTree.presets` entry. Its
-`baseNodeType` filters **every level**: a preset like `Some.Package:BlogPosting` results in an empty tree, since the
-site node has no children of that type. Such presets are search filters rather than trees – searching is not part of
-this API yet.
+The package comes with a `default` tree of all documents. The `baseNodeType` of a tree filters **every level**: a
+tree of `Some.Package:BlogPosting` would be empty, since the site node has no children of that type. That's why the
+node tree presets of the Neos UI (`Neos.Neos.userInterface.navigateComponent.nodeTree.presets`) are not taken into
+account – they are search filters rather than trees, and searching is not part of this API yet.
 
 Trees can be adjusted, removed (`~`) and added:
 

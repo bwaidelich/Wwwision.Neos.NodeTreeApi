@@ -1,11 +1,7 @@
 Wwwision:
   Neos:
     NodeTreeApi:
-      # Derive one tree from every "Neos.Neos.userInterface.navigateComponent.nodeTree.presets" entry, named like the
-      # preset. Its "baseNodeType" filters every level of the tree
-      derivedFromPresets: true
-
-      # Additional trees – or adjustments of the ones derived from presets, by preset name. "~" removes a tree
+      # The trees, by id. "~" removes a tree. The "baseNodeType" filters every level of a tree
       #
       # <treeId>:
       #   label: 'Some.Package:Main:tree.label' # a translation shorthand or a plain label
@@ -18,7 +14,11 @@ Wwwision:
       #       nodeType: 'Some.Package:Blog'
       #       resolver: 'blogPostingsByDate'
       #       position: 'start'
-      trees: []
+      trees:
+        'default':
+          label: 'Neos.Neos:Main:document'
+          icon: 'sitemap'
+          baseNodeType: 'Neos.Neos:Document'
 
       # The resolvers the trees can refer to, by key. "options" are passed to the constructor as named arguments
       resolvers:

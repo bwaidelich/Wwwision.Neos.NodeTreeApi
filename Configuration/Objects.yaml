@@ -6,9 +6,7 @@ Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitions:
 Wwwision\Neos\NodeTreeApi\Tree\TreeDefinitionsFactory:
   arguments:
     1:
-      setting: 'Wwwision.Neos.NodeTreeApi'
-    2:
-      setting: 'Neos.Neos.userInterface.navigateComponent.nodeTree.presets'
+      setting: 'Wwwision.Neos.NodeTreeApi.trees'
 
 Wwwision\Neos\NodeTreeApi\Tree\ResolverRegistry:
   scope: singleton
